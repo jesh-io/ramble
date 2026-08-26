@@ -3,12 +3,69 @@ import AppKit
 /// Tiny Wispr-style hover badge shown while dictating: a dark pill at the
 /// bottom-center of the screen with a status dot and a single line of live
 /// text. Non-activating, so focus stays in the app you're dictating into.
+/// Scrolling voice level meter: newest sample enters on the right, history
+/// slides left. Layer frame changes animate implicitly, so it reads smooth.
+final class LevelBarsView: NSView {
+    private let barCount = 14
+    private let barWidth: CGFloat = 2.5
+    private let gap: CGFloat = 2
+    private var bars: [CALayer] = []
+    private var levels: [Float]
+
+    var meterWidth: CGFloat { CGFloat(barCount) * (barWidth + gap) - gap }
+
+    override init(frame: NSRect) {
+        levels = Array(repeating: 0, count: barCount)
+        super.init(frame: frame)
+        wantsLayer = true
+        for _ in 0..<barCount {
+            let bar = CALayer()
+            bar.backgroundColor = NSColor.white.withAlphaComponent(0.85).cgColor
+            bar.cornerRadius = barWidth / 2
+            layer?.addSublayer(bar)
+            bars.append(bar)
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func push(_ level: Float) {
+        levels.removeFirst()
+        levels.append(level)
+        layoutBars()
+    }
+
+    func reset() {
+        levels = Array(repeating: 0, count: barCount)
+        layoutBars()
+    }
+
+    override func layout() {
+        super.layout()
+        layoutBars()
+    }
+
+    private func layoutBars() {
+        let h = bounds.height
+        for (i, bar) in bars.enumerated() {
+            let barHeight = max(2.5, CGFloat(levels[i]) * h)
+            bar.frame = CGRect(
+                x: CGFloat(i) * (barWidth + gap),
+                y: (h - barHeight) / 2,
+                width: barWidth,
+                height: barHeight)
+            bar.opacity = 0.35 + 0.65 * Float(i) / Float(barCount) // older = dimmer
+        }
+    }
+}
+
 final class LivePanel: NSObject {
     private let panel: NSPanel
     private let pill: NSView
     private let dot: NSTextField
     private let label: NSTextField
     private let skipButton: NSButton
+    private let levelBars = LevelBarsView(frame: NSRect(x: 0, y: 0, width: 60, height: 16))
 
     /// Called when the user clicks Skip during cleanup.
     var onSkip: (() -> Void)?
@@ -73,8 +130,10 @@ final class LivePanel: NSObject {
         skipButton.isHidden = true
 
         pill.addSubview(dot)
+        pill.addSubview(levelBars)
         pill.addSubview(label)
         pill.addSubview(skipButton)
+        levelBars.isHidden = true
 
         let content = NSView()
         content.addSubview(pill)
@@ -95,10 +154,18 @@ final class LivePanel: NSObject {
     /// hypothesis shrinking/rewriting made the text hard to read.
     private var stickyWidth: CGFloat = 0
 
+    /// Feed live microphone loudness while recording.
+    func pushLevel(_ level: Float) {
+        guard !levelBars.isHidden else { return }
+        levelBars.push(level)
+    }
+
     func show(status: String) {
         stickyWidth = 0
         setDot(status)
         setSkipVisible(false)
+        levelBars.isHidden = false
+        levelBars.reset()
         render(NSAttributedString(
             string: "Listening…",
             attributes: [.font: Self.font, .foregroundColor: NSColor.white.withAlphaComponent(0.55), .paragraphStyle: Self.truncateHead]))
@@ -120,6 +187,7 @@ final class LivePanel: NSObject {
     func showProcessing(message: String) {
         stickyWidth = 0
         setDot("◐")
+        levelBars.isHidden = true
         setSkipVisible(true)
         render(NSAttributedString(
             string: message,
@@ -156,6 +224,7 @@ final class LivePanel: NSObject {
     func setStatus(_ status: String, message: String) {
         stickyWidth = 0
         setDot(status)
+        levelBars.isHidden = true
         setSkipVisible(false)
         render(NSAttributedString(
             string: message,
@@ -192,13 +261,14 @@ final class LivePanel: NSObject {
         let dotSize = dot.intrinsicContentSize
         let skipSize = skipButton.isHidden ? .zero : skipButton.intrinsicContentSize
         let skipSpan = skipButton.isHidden ? 0 : skipSize.width + Self.dotGap
+        let barsSpan = levelBars.isHidden ? 0 : levelBars.meterWidth + Self.dotGap
         // NSTextField draws a couple of points wider than the attributed
         // string measures; without slack, head-truncation kicks in and eats
         // the first characters ("Listening…" -> "…tening…").
         let textWidth = ceil(text.size().width) + 8
-        let labelMax = Self.maxWidth - Self.hPad * 2 - dotSize.width - Self.dotGap - skipSpan
+        let labelMax = Self.maxWidth - Self.hPad * 2 - dotSize.width - Self.dotGap - skipSpan - barsSpan
         let labelWidth = min(textWidth, labelMax)
-        var pillWidth = max(Self.minWidth, Self.hPad * 2 + dotSize.width + Self.dotGap + labelWidth + skipSpan)
+        var pillWidth = max(Self.minWidth, Self.hPad * 2 + dotSize.width + Self.dotGap + labelWidth + skipSpan + barsSpan)
         pillWidth = max(pillWidth, stickyWidth)
         stickyWidth = pillWidth
 
@@ -215,11 +285,19 @@ final class LivePanel: NSObject {
             y: (Self.height - dotSize.height) / 2,
             width: dotSize.width,
             height: dotSize.height)
+        if !levelBars.isHidden {
+            levelBars.frame = NSRect(
+                x: Self.hPad + dotSize.width + Self.dotGap,
+                y: (Self.height - 16) / 2,
+                width: levelBars.meterWidth,
+                height: 16)
+        }
         let labelHeight = ceil(text.size().height)
         // Right-align the label in the available space so the newest words
         // hug the pill's right edge (or the Skip button) and flow leftward.
         label.frame = NSRect(
-            x: pillWidth - Self.hPad - skipSpan - labelWidth,
+            x: max(Self.hPad + dotSize.width + Self.dotGap + barsSpan,
+                   pillWidth - Self.hPad - skipSpan - labelWidth),
             y: (Self.height - labelHeight) / 2,
             width: labelWidth,
             height: labelHeight)

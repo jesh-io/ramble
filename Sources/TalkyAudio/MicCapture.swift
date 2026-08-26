@@ -26,6 +26,20 @@ public final class MicCapture {
         }
     }
 
+    /// Normalized 0…1 loudness of a buffer (log-scaled so speech is visible).
+    public static func level(of buffer: AVAudioPCMBuffer) -> Float {
+        guard let data = buffer.floatChannelData, buffer.frameLength > 0 else { return 0 }
+        let samples = data[0]
+        var sum: Float = 0
+        for i in 0..<Int(buffer.frameLength) {
+            sum += samples[i] * samples[i]
+        }
+        let rms = sqrt(sum / Float(buffer.frameLength))
+        guard rms > 0 else { return 0 }
+        let db = 20 * log10(rms)                  // ~-60 (silence) … 0 (max)
+        return max(0, min(1, (db + 50) / 42))     // speech lands ~0.3–0.9
+    }
+
     /// Starts capture. If `recordTo` is set, audio is also encoded to that
     /// file (AAC .m4a) live, buffer by buffer — so a crash mid-dictation
     /// still leaves the audio on disk.

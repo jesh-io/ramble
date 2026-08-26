@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var busy = false
     private var recordingStart: Date?
     private var recordingTimer: Timer?
+    private var settingsController: SettingsWindowController?
 
     private var captions: String { config.output.captions }
 
@@ -152,6 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item("Open Recordings Folder", #selector(openRecordings)))
         menu.addItem(.separator())
 
+        menu.addItem(item("Settings…", #selector(openSettings), key: ","))
         menu.addItem(item("Open Config", #selector(openConfig)))
         menu.addItem(item("Reload Config", #selector(reloadConfigAction)))
         if config.output.paste && !Paster.canPaste {
@@ -171,6 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let value = sender.representedObject as? String else { return }
         config.output.captions = value
         try? config.save()
+        syncSettingsStore()
         rebuildMenu()
     }
 
@@ -250,6 +253,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard session?.state == .recording, captions == "full" else { return }
             panel.update(finalized: finalized, volatile: volatile)
 
+        case .audioLevel(let level):
+            guard captions != "off" else { return }
+            panel.pushLevel(level)
+
         case .cleaningStarted:
             rebuildMenu() // adds "Paste Raw Now"
             if captions != "off" {
@@ -315,6 +322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleCleanup() {
         config.cleanup.enabled.toggle()
         try? config.save()
+        syncSettingsStore()
         rebuildMenu()
     }
 
@@ -322,6 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let id = sender.representedObject as? String else { return }
         config.cleanup.provider = id
         try? config.save()
+        syncSettingsStore()
         rebuildMenu()
     }
 
@@ -430,6 +439,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try? FileManager.default.createDirectory(
             at: RecordingStore.baseDir, withIntermediateDirectories: true)
         NSWorkspace.shared.open(RecordingStore.baseDir)
+    }
+
+    @objc private func openSettings() {
+        if settingsController == nil {
+            let store = ConfigStore(config: config)
+            store.onChange = { [weak self] newConfig in
+                guard let self, self.config != newConfig else { return }
+                self.config = newConfig
+                self.hotKey = nil
+                self.registerHotkey()
+                self.rebuildMenu()
+            }
+            settingsController = SettingsWindowController(store: store)
+        }
+        syncSettingsStore()
+        settingsController?.show()
+    }
+
+    /// Keeps the settings window's model current after menu-driven changes.
+    private func syncSettingsStore() {
+        if let controller = settingsController, controller.store.config != config {
+            controller.store.config = config
+        }
     }
 
     @objc private func openConfig() {

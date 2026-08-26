@@ -20,6 +20,8 @@ public final class DictationSession: @unchecked Sendable {
         case stateChanged(State)
         /// Finalized text so far + current volatile hypothesis — join for live display.
         case liveText(finalized: String, volatile: String)
+        /// Microphone loudness 0…1, ~12 Hz while recording — drive a level meter.
+        case audioLevel(Float)
         /// Recording finalized; LLM cleanup is starting. The raw transcript
         /// already exists — UI may offer "skip" (see `skipCleanup()`).
         case cleaningStarted
@@ -92,7 +94,9 @@ public final class DictationSession: @unchecked Sendable {
                 sessionDir = try? RecordingStore.newSessionDir()
             }
             try mic.start(recordTo: sessionDir?.appendingPathComponent("audio.m4a")) { [weak self] buffer in
-                self?.stream?.feed(buffer)
+                guard let self else { return }
+                self.stream?.feed(buffer)
+                self.emit(.audioLevel(MicCapture.level(of: buffer)))
             }
             recordStartDate = Date()
             setState(.recording)
