@@ -46,6 +46,7 @@ final class SettingsWindowController {
             tabs.addTabViewItem(item)
         }
 
+        add("Usage", "chart.bar.xaxis", UsageTab(store: store).frame(width: 620, height: 620))
         add("General", "gearshape", GeneralTab(store: store).frame(width: 620))
         add("Cleanup", "sparkles", CleanupTab(store: store).frame(width: 620, height: 640))
         add("Accounts", "key", AccountsTab(store: store).frame(width: 620, height: 560))
