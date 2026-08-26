@@ -3,11 +3,15 @@ import AppKit
 /// Tiny Wispr-style hover badge shown while dictating: a dark pill at the
 /// bottom-center of the screen with a status dot and a single line of live
 /// text. Non-activating, so focus stays in the app you're dictating into.
-final class LivePanel {
+final class LivePanel: NSObject {
     private let panel: NSPanel
     private let pill: NSView
     private let dot: NSTextField
     private let label: NSTextField
+    private let skipButton: NSButton
+
+    /// Called when the user clicks Skip during cleanup.
+    var onSkip: (() -> Void)?
 
     private static let height: CGFloat = 30
     private static let minWidth: CGFloat = 96
@@ -26,7 +30,7 @@ final class LivePanel {
         return p
     }()
 
-    init() {
+    override init() {
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.minWidth, height: Self.height),
             styleMask: [.nonactivatingPanel, .borderless],
@@ -62,12 +66,27 @@ final class LivePanel {
         label.maximumNumberOfLines = 1
         label.wantsLayer = true
 
+        skipButton = NSButton(title: "Skip", target: nil, action: nil)
+        skipButton.bezelStyle = .accessoryBarAction
+        skipButton.controlSize = .mini
+        skipButton.font = .systemFont(ofSize: 10, weight: .semibold)
+        skipButton.isHidden = true
+
         pill.addSubview(dot)
         pill.addSubview(label)
+        pill.addSubview(skipButton)
 
         let content = NSView()
         content.addSubview(pill)
         panel.contentView = content
+
+        super.init()
+        skipButton.target = self
+        skipButton.action = #selector(skipTapped)
+    }
+
+    @objc private func skipTapped() {
+        onSkip?()
     }
 
     // MARK: - Public API
@@ -79,10 +98,38 @@ final class LivePanel {
     func show(status: String) {
         stickyWidth = 0
         setDot(status)
+        setSkipVisible(false)
         render(NSAttributedString(
             string: "Listening…",
             attributes: [.font: Self.font, .foregroundColor: NSColor.white.withAlphaComponent(0.55), .paragraphStyle: Self.truncateHead]))
         panel.orderFrontRegardless()
+    }
+
+    /// Minimal mode: dot + elapsed time, nothing else.
+    func updateElapsed(_ elapsed: String) {
+        render(NSAttributedString(
+            string: elapsed,
+            attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
+                .foregroundColor: NSColor.white.withAlphaComponent(0.85),
+                .paragraphStyle: Self.truncateHead,
+            ]))
+    }
+
+    /// Cleanup phase: message + a clickable Skip button.
+    func showProcessing(message: String) {
+        stickyWidth = 0
+        setDot("◐")
+        setSkipVisible(true)
+        render(NSAttributedString(
+            string: message,
+            attributes: [.font: Self.font, .foregroundColor: NSColor.white.withAlphaComponent(0.75), .paragraphStyle: Self.truncateHead]))
+        panel.orderFrontRegardless()
+    }
+
+    private func setSkipVisible(_ visible: Bool) {
+        skipButton.isHidden = !visible
+        panel.ignoresMouseEvents = !visible
     }
 
     /// Finalized text renders solid; the volatile hypothesis renders dimmed.
@@ -109,6 +156,7 @@ final class LivePanel {
     func setStatus(_ status: String, message: String) {
         stickyWidth = 0
         setDot(status)
+        setSkipVisible(false)
         render(NSAttributedString(
             string: message,
             attributes: [.font: Self.font, .foregroundColor: NSColor.white.withAlphaComponent(0.75), .paragraphStyle: Self.truncateHead]))
@@ -142,17 +190,26 @@ final class LivePanel {
         label.attributedStringValue = text
 
         let dotSize = dot.intrinsicContentSize
+        let skipSize = skipButton.isHidden ? .zero : skipButton.intrinsicContentSize
+        let skipSpan = skipButton.isHidden ? 0 : skipSize.width + Self.dotGap
         // NSTextField draws a couple of points wider than the attributed
         // string measures; without slack, head-truncation kicks in and eats
         // the first characters ("Listening…" -> "…tening…").
         let textWidth = ceil(text.size().width) + 8
-        let labelMax = Self.maxWidth - Self.hPad * 2 - dotSize.width - Self.dotGap
+        let labelMax = Self.maxWidth - Self.hPad * 2 - dotSize.width - Self.dotGap - skipSpan
         let labelWidth = min(textWidth, labelMax)
-        var pillWidth = max(Self.minWidth, Self.hPad * 2 + dotSize.width + Self.dotGap + labelWidth)
+        var pillWidth = max(Self.minWidth, Self.hPad * 2 + dotSize.width + Self.dotGap + labelWidth + skipSpan)
         pillWidth = max(pillWidth, stickyWidth)
         stickyWidth = pillWidth
 
         pill.frame = NSRect(x: 0, y: 0, width: pillWidth, height: Self.height)
+        if !skipButton.isHidden {
+            skipButton.frame = NSRect(
+                x: pillWidth - Self.hPad - skipSize.width,
+                y: (Self.height - skipSize.height) / 2,
+                width: skipSize.width,
+                height: skipSize.height)
+        }
         dot.frame = NSRect(
             x: Self.hPad,
             y: (Self.height - dotSize.height) / 2,
@@ -160,9 +217,9 @@ final class LivePanel {
             height: dotSize.height)
         let labelHeight = ceil(text.size().height)
         // Right-align the label in the available space so the newest words
-        // hug the pill's right edge and flow steadily leftward.
+        // hug the pill's right edge (or the Skip button) and flow leftward.
         label.frame = NSRect(
-            x: pillWidth - Self.hPad - labelWidth,
+            x: pillWidth - Self.hPad - skipSpan - labelWidth,
             y: (Self.height - labelHeight) / 2,
             width: labelWidth,
             height: labelHeight)

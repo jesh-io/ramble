@@ -20,6 +20,9 @@ public final class DictationSession: @unchecked Sendable {
         case stateChanged(State)
         /// Finalized text so far + current volatile hypothesis — join for live display.
         case liveText(finalized: String, volatile: String)
+        /// Recording finalized; LLM cleanup is starting. The raw transcript
+        /// already exists — UI may offer "skip" (see `skipCleanup()`).
+        case cleaningStarted
         /// The finished, cleaned result.
         case result(text: String, raw: String)
         case error(String)
@@ -33,8 +36,10 @@ public final class DictationSession: @unchecked Sendable {
     private let mic = MicCapture()
     private var stream: TranscriptionStream?
     private var eventTask: Task<Void, Never>?
+    private var cleanupTask: Task<String?, Never>?
     private var finalizedText = ""
     private var sessionDir: URL?
+    private var recordStartDate: Date?
 
     private var timestamp: String { ISO8601DateFormatter().string(from: Date()) }
 
@@ -89,6 +94,7 @@ public final class DictationSession: @unchecked Sendable {
             try mic.start(recordTo: sessionDir?.appendingPathComponent("audio.m4a")) { [weak self] buffer in
                 self?.stream?.feed(buffer)
             }
+            recordStartDate = Date()
             setState(.recording)
         } catch {
             stream?.cancel()
@@ -101,6 +107,12 @@ public final class DictationSession: @unchecked Sendable {
     public func stop() async {
         guard state == .recording, let stream else { return }
         mic.stop()
+        if let start = recordStartDate {
+            UsageLog.record(
+                kind: "stt", provider: transcriber.id, model: "SpeechAnalyzer/\(config.locale)",
+                seconds: Date().timeIntervalSince(start))
+            recordStartDate = nil
+        }
         setState(.processing)
         do {
             let transcript = try await stream.finish()
@@ -114,23 +126,38 @@ public final class DictationSession: @unchecked Sendable {
                 to: SpokenCommands.apply(to: raw), vocabulary: config.vocabulary)
             var usedProvider: String? = nil
             if !text.isEmpty, config.cleanup.enabled, let provider = config.cleanup.activeProvider {
-                do {
-                    let cleaner = try CleanerFactory.make(
-                        provider: provider,
-                        systemPrompt: config.effectiveCleanupPrompt,
-                        timeout: config.cleanup.timeoutSeconds
-                    )
-                    let candidate = try await cleaner.clean(text)
-                    if CleanupValidator.looksFaithful(raw: text, cleaned: candidate) {
-                        text = candidate
-                        usedProvider = provider.id
-                    } else {
-                        emit(.error("Cleanup model hallucinated — using raw transcript"))
+                emit(.cleaningStarted)
+                let base = text
+                let config = config
+                let task = Task<String?, Never> {
+                    do {
+                        let cleaner = try CleanerFactory.make(
+                            provider: provider,
+                            systemPrompt: config.effectiveCleanupPrompt,
+                            timeout: config.cleanup.timeoutSeconds
+                        )
+                        let candidate = try await cleaner.clean(base)
+                        guard !Task.isCancelled else { return nil }
+                        guard CleanupValidator.looksFaithful(raw: base, cleaned: candidate) else {
+                            self.emit(.error("Cleanup model hallucinated — using raw transcript"))
+                            return nil
+                        }
+                        return candidate
+                    } catch {
+                        // Skipped (cancelled) is silent; real failures fall
+                        // back to raw with a note. Never lose a dictation.
+                        if !Task.isCancelled {
+                            self.emit(.error("Cleanup failed (using raw transcript): \(error.localizedDescription)"))
+                        }
+                        return nil
                     }
-                } catch {
-                    // Never lose a dictation to a cleanup failure — fall back to raw.
-                    emit(.error("Cleanup failed (using raw transcript): \(error.localizedDescription)"))
                 }
+                cleanupTask = task
+                if let cleaned = await task.value {
+                    text = cleaned
+                    usedProvider = provider.id
+                }
+                cleanupTask = nil
             }
             if !raw.isEmpty {
                 DictationHistory.append(raw: raw, cleaned: text, provider: usedProvider)
@@ -162,6 +189,12 @@ public final class DictationSession: @unchecked Sendable {
             setState(.idle)
             emit(.error("Could not finalize transcription: \(error.localizedDescription)"))
         }
+    }
+
+    /// Abandons an in-flight cleanup; the raw transcript is delivered as the
+    /// result immediately. No-op outside the processing phase.
+    public func skipCleanup() {
+        cleanupTask?.cancel()
     }
 
     public func cancelRecording() {

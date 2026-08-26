@@ -1,4 +1,5 @@
 import Foundation
+@preconcurrency import AVFAudio
 import TalkyCore
 import TalkyAudio
 import TalkyClean
@@ -31,6 +32,12 @@ public enum FileTranscription {
         defer { extracted.cleanUp() }
 
         let transcript = try await engine.transcribeFile(extracted.url, onSegment: onSegment)
+
+        if let audio = try? AVAudioFile(forReading: extracted.url), audio.fileFormat.sampleRate > 0 {
+            UsageLog.record(
+                kind: "stt", provider: engine.id, model: "SpeechAnalyzer/file",
+                seconds: Double(audio.length) / audio.fileFormat.sampleRate)
+        }
 
         guard clean, !transcript.isEmpty, config.cleanup.enabled,
               let provider = config.cleanup.activeProvider else {

@@ -38,16 +38,29 @@ public enum RecordingStore {
         public let provider: String?
         public let segments: [TranscriptSegment]
         public let error: String?
+        /// The user's hand-corrected version — golden label for evals.
+        public var revision: String?
 
         public init(timestamp: String, raw: String, cleaned: String?, provider: String?,
-                    segments: [TranscriptSegment], error: String? = nil) {
+                    segments: [TranscriptSegment], error: String? = nil, revision: String? = nil) {
             self.timestamp = timestamp
             self.raw = raw
             self.cleaned = cleaned
             self.provider = provider
             self.segments = segments
             self.error = error
+            self.revision = revision
         }
+    }
+
+    /// Stores the user's corrected text into a session (eval golden label).
+    public static func saveRevision(_ text: String, in sessionDir: URL) {
+        let url = sessionDir.appendingPathComponent("transcript.json")
+        guard let data = try? Data(contentsOf: url),
+              var record = try? JSONDecoder().decode(SessionRecord.self, from: data)
+        else { return }
+        record.revision = text
+        writeRecord(record, to: sessionDir)
     }
 
     public static func writeRecord(_ record: SessionRecord, to sessionDir: URL) {

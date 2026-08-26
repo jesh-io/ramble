@@ -11,6 +11,10 @@ USAGE:
   talky toggle | start | stop                    Control the Talky menu bar app
   talky clean [text]                             Clean text (arg or stdin) with the active model
   talky history [n]                              Show last n dictations, raw vs cleaned (default 3)
+  talky learn "<Term> = <misheard1>, <m2>"       Add a vocabulary term (= part optional)
+  talky vocab                                    List vocabulary entries
+  talky eval [provider-id]                       Score cleanup against your corrected dictations
+  talky usage                                    Usage & cost per day per model
   talky models                                   List cleanup model providers
   talky use <provider-id>                        Set the active cleanup provider
   talky download                                 Pre-download the on-device speech model
@@ -82,6 +86,127 @@ case "history":
 
 case "recordings":
     print(RecordingStore.baseDir.path)
+
+case "usage":
+    let config = TalkyConfig.load()
+    let entries = UsageLog.entries()
+    guard !entries.isEmpty else {
+        print("No usage recorded yet (\(UsageLog.fileURL.path))")
+        break
+    }
+    struct Key: Hashable { let day: String; let model: String }
+    var agg: [Key: (seconds: Double, tokensIn: Int, tokensOut: Int)] = [:]
+    for entry in entries {
+        let key = Key(day: entry.day, model: entry.model)
+        var a = agg[key] ?? (0, 0, 0)
+        a.seconds += entry.seconds ?? 0
+        a.tokensIn += entry.tokensIn ?? 0
+        a.tokensOut += entry.tokensOut ?? 0
+        agg[key] = a
+    }
+    func cost(model: String, tokensIn: Int, tokensOut: Int) -> Double? {
+        guard let p = config.cleanup.providers.first(where: { $0.model == model }),
+              p.inputCostPerMTok != nil || p.outputCostPerMTok != nil else { return nil }
+        return Double(tokensIn) / 1e6 * (p.inputCostPerMTok ?? 0)
+            + Double(tokensOut) / 1e6 * (p.outputCostPerMTok ?? 0)
+    }
+    var dayCost: [String: Double] = [:]
+    print("day         model                          audio     tok in   tok out  cost")
+    for (key, a) in agg.sorted(by: { ($0.key.day, $0.key.model) > ($1.key.day, $1.key.model) }) {
+        let c = cost(model: key.model, tokensIn: a.tokensIn, tokensOut: a.tokensOut)
+        if let c { dayCost[key.day, default: 0] += c }
+        let audio = a.seconds > 0 ? String(format: "%.0fs", a.seconds) : ""
+        let tin = a.tokensIn > 0 ? "\(a.tokensIn)" : ""
+        let tout = a.tokensOut > 0 ? "\(a.tokensOut)" : ""
+        let costStr = c.map { String(format: "$%.4f", $0) } ?? "local"
+        print(key.day.padding(toLength: 12, withPad: " ", startingAt: 0)
+            + key.model.padding(toLength: 31, withPad: " ", startingAt: 0)
+            + audio.padding(toLength: 10, withPad: " ", startingAt: 0)
+            + tin.padding(toLength: 9, withPad: " ", startingAt: 0)
+            + tout.padding(toLength: 9, withPad: " ", startingAt: 0)
+            + costStr)
+    }
+    let paidDays = dayCost.filter { $0.value > 0 }
+    if !paidDays.isEmpty {
+        let avg = paidDays.values.reduce(0, +) / Double(paidDays.count)
+        print(String(format: "\navg $%.4f per active day → ~$%.2f / 30 days", avg, avg * 30))
+    }
+
+case "learn":
+    guard args.count > 1 else { fail("usage: talky learn \"Term = misheard1, misheard2\"") }
+    guard let entry = TalkyConfig.vocabularyEntry(from: args.dropFirst().joined(separator: " ")) else {
+        fail("Could not parse vocabulary entry")
+    }
+    var config = TalkyConfig.load()
+    config.addVocabulary([entry])
+    do {
+        try config.save()
+        print("learned: \(entry)")
+        DistributedNotificationCenter.default().postNotificationName(
+            Notification.Name("io.talky.reload"), object: nil, userInfo: nil, deliverImmediately: true)
+    } catch {
+        fail("Could not save config: \(error.localizedDescription)")
+    }
+
+case "vocab":
+    for entry in TalkyConfig.load().vocabulary {
+        print("- \(entry)")
+    }
+
+case "eval":
+    var config = TalkyConfig.load()
+    if args.count > 1 {
+        guard config.cleanup.providers.contains(where: { $0.id == args[1] }) else {
+            fail("Unknown provider '\(args[1])'")
+        }
+        config.cleanup.provider = args[1]
+    }
+    let goldenSessions = RecordingStore.sessions(limit: 1000).filter { $0.record?.revision != nil }
+    guard !goldenSessions.isEmpty else {
+        fail("""
+            No corrected dictations to score against yet.
+            Use the menu bar's "Fix Last Dictation…" to correct outputs — each correction becomes a golden eval case.
+            """)
+    }
+    let cfg = config
+    Task {
+        func words(_ s: String) -> [String] {
+            s.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+        }
+        // Word error rate: word-level Levenshtein / reference length.
+        func wer(reference: String, hypothesis: String) -> Double {
+            let r = words(reference), h = words(hypothesis)
+            guard !r.isEmpty else { return h.isEmpty ? 0 : 1 }
+            var prev = Array(0...h.count)
+            for i in 1...r.count {
+                var row = [i] + Array(repeating: 0, count: h.count)
+                for j in 1...h.count {
+                    row[j] = min(
+                        prev[j] + 1,
+                        row[j - 1] + 1,
+                        prev[j - 1] + (r[i - 1] == h[j - 1] ? 0 : 1))
+                }
+                prev = row
+            }
+            return Double(prev[h.count]) / Double(r.count)
+        }
+
+        print("Scoring \(goldenSessions.count) corrected dictation(s) with provider '\(cfg.cleanup.provider)'…\n")
+        var total = 0.0
+        var count = 0
+        for session in goldenSessions {
+            guard let record = session.record, let golden = record.revision else { continue }
+            let output = (try? await TalkyKit.cleanText(record.raw, config: cfg)) ?? record.raw
+            let score = wer(reference: golden, hypothesis: output)
+            total += score
+            count += 1
+            print(String(format: "WER %.3f  %@", score, session.dir.lastPathComponent))
+        }
+        let mean = total / Double(max(count, 1))
+        print(String(format: "\nmean WER: %.3f across %d case(s)  (lower is better)", mean, count))
+        semaphore.signal()
+    }
+    semaphore.wait()
 
 case "models":
     let config = TalkyConfig.load()

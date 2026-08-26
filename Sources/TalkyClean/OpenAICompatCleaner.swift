@@ -62,6 +62,13 @@ public struct OpenAICompatCleaner: TextCleaner {
             throw TalkyError("Cleanup provider '\(id)' returned an unexpected response shape")
         }
 
+        if let usage = json["usage"] as? [String: Any] {
+            UsageLog.record(
+                kind: "cleanup", provider: id, model: model,
+                tokensIn: usage["prompt_tokens"] as? Int,
+                tokensOut: usage["completion_tokens"] as? Int)
+        }
+
         let cleaned = Self.postProcess(content)
         guard !cleaned.isEmpty else {
             throw TalkyError("Cleanup provider '\(id)' returned empty text")

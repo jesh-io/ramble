@@ -14,15 +14,22 @@ public struct CleanupProvider: Codable, Sendable, Equatable {
     /// "apple" (on-device Apple Foundation Models), or a custom engine
     /// registered via `CleanerFactory.register` (e.g. "mlx" on iOS).
     public var engine: String?
+    /// USD per million input/output tokens, for remote-model cost tracking.
+    /// Leave nil for local models (cost 0).
+    public var inputCostPerMTok: Double?
+    public var outputCostPerMTok: Double?
 
     public init(id: String, baseURL: String, model: String, apiKeyEnv: String? = nil,
-                apiKey: String? = nil, engine: String? = nil) {
+                apiKey: String? = nil, engine: String? = nil,
+                inputCostPerMTok: Double? = nil, outputCostPerMTok: Double? = nil) {
         self.id = id
         self.baseURL = baseURL
         self.model = model
         self.apiKeyEnv = apiKeyEnv
         self.apiKey = apiKey
         self.engine = engine
+        self.inputCostPerMTok = inputCostPerMTok
+        self.outputCostPerMTok = outputCostPerMTok
     }
 
     /// Resolved API key: inline value, else the env var it names.
@@ -130,13 +137,18 @@ public struct OutputConfig: Codable, Sendable, Equatable {
     public var restoreClipboard: Bool
     /// Play subtle sounds on start/stop.
     public var sounds: Bool
+    /// Live caption pill while recording: "minimal" (dot + elapsed time),
+    /// "full" (streaming text), or "off" (menu bar icon only).
+    public var captions: String
 
-    public static let `default` = OutputConfig(paste: true, restoreClipboard: true, sounds: true)
+    public static let `default` = OutputConfig(
+        paste: true, restoreClipboard: true, sounds: true, captions: "minimal")
 
-    public init(paste: Bool, restoreClipboard: Bool, sounds: Bool) {
+    public init(paste: Bool, restoreClipboard: Bool, sounds: Bool, captions: String = "minimal") {
         self.paste = paste
         self.restoreClipboard = restoreClipboard
         self.sounds = sounds
+        self.captions = captions
     }
 
     public init(from decoder: Decoder) throws {
@@ -145,6 +157,7 @@ public struct OutputConfig: Codable, Sendable, Equatable {
         paste = try c.decodeIfPresent(Bool.self, forKey: .paste) ?? d.paste
         restoreClipboard = try c.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? d.restoreClipboard
         sounds = try c.decodeIfPresent(Bool.self, forKey: .sounds) ?? d.sounds
+        captions = try c.decodeIfPresent(String.self, forKey: .captions) ?? d.captions
     }
 }
 
@@ -201,6 +214,28 @@ public struct TalkyConfig: Codable, Sendable, Equatable {
         self.output = output
         self.recordings = recordings
         self.vocabulary = vocabulary
+    }
+
+    /// Adds vocabulary entries, skipping duplicates.
+    public mutating func addVocabulary(_ entries: [String]) {
+        for entry in entries where !vocabulary.contains(entry) {
+            vocabulary.append(entry)
+        }
+    }
+
+    /// Parses "Term = misheard1, misheard2" (or a bare term) into a
+    /// vocabulary entry.
+    public static func vocabularyEntry(from input: String) -> String? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let parts = trimmed.split(separator: "=", maxSplits: 1)
+        if parts.count == 2 {
+            let term = parts[0].trimmingCharacters(in: .whitespaces)
+            let misheard = parts[1].trimmingCharacters(in: .whitespaces)
+            guard !term.isEmpty, !misheard.isEmpty else { return nil }
+            return "\(term) (misheard: \(misheard))"
+        }
+        return trimmed
     }
 
     /// The cleanup system prompt with the personal vocabulary appended.
