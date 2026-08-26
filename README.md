@@ -100,6 +100,19 @@ remote are configured identically; API keys come from the environment via
 `apiKeyEnv` (don't put secrets in the file). Add as many as you like and
 switch from the menu bar (Cleanup Model) or `talky use`.
 
+## Trackpad gestures (optional add-on)
+
+Toggle dictation with a trackpad gesture — no BetterTouchTool needed.
+Default: **3-finger double tap** (a safe combination that doesn't collide
+with system gestures). Enable and tune it in Settings → General.
+
+This feature uses Apple's private MultitouchSupport framework (via
+[OpenMultitouchSupport](https://github.com/Kyome22/OpenMultitouchSupport))
+and is a **code-level optional add-on**: to publish a build with zero
+private-API usage, remove `"TalkyGestures"` from `TalkyApp`'s dependencies
+in `Package.swift` — the app gates on `canImport(TalkyGestures)` and
+compiles cleanly without it (no App Store restrictions apply to the rest).
+
 ## iPhone (TalkyPhone)
 
 `TalkyPhone/` is an iOS 26 app built on the same TalkyKit SDK: tap the mic

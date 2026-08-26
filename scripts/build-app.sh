@@ -15,6 +15,20 @@ mkdir -p "$APP/Contents/MacOS"
 cp .build/release/TalkyApp "$APP/Contents/MacOS/Talky"
 cp .build/release/talky dist/talky
 
+# Embed any dynamic frameworks/bundles SPM produced (e.g. the
+# OpenMultitouchSupport XCFramework used by the TalkyGestures add-on).
+shopt -s nullglob
+frameworks=(.build/release/*.framework .build/release/*.bundle)
+if [ ${#frameworks[@]} -gt 0 ]; then
+    mkdir -p "$APP/Contents/Frameworks"
+    for fw in "${frameworks[@]}"; do
+        cp -R "$fw" "$APP/Contents/Frameworks/"
+        codesign --force --sign - "$APP/Contents/Frameworks/$(basename "$fw")"
+    done
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Talky" 2>/dev/null || true
+fi
+shopt -u nullglob
+
 cat > "$APP/Contents/Info.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

@@ -206,6 +206,34 @@ public struct APIAccount: Codable, Sendable, Equatable {
     }
 }
 
+/// Trackpad gesture toggle (requires the TalkyGestures add-on at build
+/// time; ignored otherwise). Disabled by default — if you also have a
+/// BetterTouchTool gesture bound to the hotkey, enabling both would
+/// double-toggle every dictation.
+public struct GestureConfig: Codable, Sendable, Equatable {
+    public var enabled: Bool
+    /// Finger count for the tap gesture (2–5).
+    public var fingers: Int
+    /// Consecutive taps required (1–3). Default: double tap.
+    public var taps: Int
+
+    public static let `default` = GestureConfig(enabled: false, fingers: 3, taps: 2)
+
+    public init(enabled: Bool, fingers: Int, taps: Int) {
+        self.enabled = enabled
+        self.fingers = fingers
+        self.taps = taps
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = Self.default
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? d.enabled
+        fingers = try c.decodeIfPresent(Int.self, forKey: .fingers) ?? d.fingers
+        taps = try c.decodeIfPresent(Int.self, forKey: .taps) ?? d.taps
+    }
+}
+
 public struct RecordingsConfig: Codable, Sendable, Equatable {
     /// Save each dictation's audio + transcript to the recordings folder.
     public var enabled: Bool
@@ -239,6 +267,8 @@ public struct TalkyConfig: Codable, Sendable, Equatable {
     public var recordings: RecordingsConfig
     /// Named API keys per integration; see `APIAccount`.
     public var accounts: [APIAccount]
+    /// Trackpad gesture toggle (TalkyGestures add-on).
+    public var gesture: GestureConfig
     /// Personal vocabulary: project names, jargon, people — exact spellings
     /// the speech engine tends to mishear. Injected into the cleanup prompt
     /// so mishearings get corrected back to these spellings.
@@ -251,18 +281,20 @@ public struct TalkyConfig: Codable, Sendable, Equatable {
         output: .default,
         recordings: .default,
         accounts: [],
+        gesture: .default,
         vocabulary: []
     )
 
     public init(hotkey: String, locale: String, cleanup: CleanupConfig, output: OutputConfig,
                 recordings: RecordingsConfig = .default, accounts: [APIAccount] = [],
-                vocabulary: [String] = []) {
+                gesture: GestureConfig = .default, vocabulary: [String] = []) {
         self.hotkey = hotkey
         self.locale = locale
         self.cleanup = cleanup
         self.output = output
         self.recordings = recordings
         self.accounts = accounts
+        self.gesture = gesture
         self.vocabulary = vocabulary
     }
 
@@ -314,6 +346,7 @@ public struct TalkyConfig: Codable, Sendable, Equatable {
         output = try c.decodeIfPresent(OutputConfig.self, forKey: .output) ?? d.output
         recordings = try c.decodeIfPresent(RecordingsConfig.self, forKey: .recordings) ?? d.recordings
         accounts = try c.decodeIfPresent([APIAccount].self, forKey: .accounts) ?? d.accounts
+        gesture = try c.decodeIfPresent(GestureConfig.self, forKey: .gesture) ?? d.gesture
         vocabulary = try c.decodeIfPresent([String].self, forKey: .vocabulary) ?? d.vocabulary
     }
 

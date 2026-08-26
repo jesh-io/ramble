@@ -87,6 +87,25 @@ private struct GeneralTab: View {
                     Text("Full — streaming text").tag("full")
                 }
             }
+            #if canImport(TalkyGestures)
+            Section("Trackpad Gesture") {
+                Toggle("Toggle dictation with a trackpad gesture", isOn: $store.config.gesture.enabled)
+                Picker("Fingers", selection: $store.config.gesture.fingers) {
+                    ForEach(2...5, id: \.self) { n in
+                        Text("\(n) fingers").tag(n)
+                    }
+                }
+                .disabled(!store.config.gesture.enabled)
+                Picker("Taps", selection: $store.config.gesture.taps) {
+                    Text("Single tap").tag(1)
+                    Text("Double tap").tag(2)
+                    Text("Triple tap").tag(3)
+                }
+                .disabled(!store.config.gesture.enabled)
+                Text("3-finger double tap is a safe default (3-finger single tap collides with the system's Look Up; 3/4-finger swipes belong to Mission Control). If a BetterTouchTool gesture already triggers the hotkey, enable only one or every tap will double-toggle.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            #endif
             Section("Output") {
                 Toggle("Paste into the frontmost app", isOn: $store.config.output.paste)
                 Toggle("Restore previous clipboard after pasting", isOn: $store.config.output.restoreClipboard)

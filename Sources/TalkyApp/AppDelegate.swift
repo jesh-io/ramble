@@ -2,6 +2,9 @@ import AppKit
 import TalkyCore
 import TalkyKit
 import TalkyProviders
+#if canImport(TalkyGestures)
+import TalkyGestures
+#endif
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -16,6 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var recordingStart: Date?
     private var recordingTimer: Timer?
     private var settingsController: SettingsWindowController?
+    #if canImport(TalkyGestures)
+    private var gestureRecognizer: GestureRecognizer?
+    #endif
 
     private var captions: String { config.output.captions }
 
@@ -28,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setIdleIcon()
         rebuildMenu()
         registerHotkey()
+        applyGestureConfig()
         observeCLICommands()
         panel.onSkip = { [weak self] in self?.session?.skipCleanup() }
 
@@ -41,6 +48,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task.detached {
             try? await TalkyKit.makeDefaultTranscriber(config: cfg).prepare()
         }
+    }
+
+    /// Starts/stops the trackpad gesture recognizer per config. No-op in
+    /// builds without the TalkyGestures add-on.
+    private func applyGestureConfig() {
+        #if canImport(TalkyGestures)
+        gestureRecognizer?.stop()
+        gestureRecognizer = nil
+        guard config.gesture.enabled else { return }
+        let recognizer = GestureRecognizer(
+            fingers: config.gesture.fingers, taps: config.gesture.taps)
+        recognizer.onGesture = { [weak self] in
+            Task { @MainActor in self?.toggle() }
+        }
+        recognizer.start()
+        gestureRecognizer = recognizer
+        #endif
     }
 
     private func registerHotkey() {
@@ -447,9 +471,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let store = ConfigStore(config: config)
             store.onChange = { [weak self] newConfig in
                 guard let self, self.config != newConfig else { return }
+                let gestureChanged = self.config.gesture != newConfig.gesture
                 self.config = newConfig
                 self.hotKey = nil
                 self.registerHotkey()
+                if gestureChanged { self.applyGestureConfig() }
                 self.rebuildMenu()
             }
             settingsController = SettingsWindowController(store: store)
@@ -476,6 +502,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         config = TalkyConfig.load()
         hotKey = nil
         registerHotkey()
+        applyGestureConfig()
         rebuildMenu()
     }
 
