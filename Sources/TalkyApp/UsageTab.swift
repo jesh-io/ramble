@@ -190,16 +190,23 @@ struct UsageTab: View {
                 .fixedSize()
             }
 
+            let today = Calendar.current.startOfDay(for: Date())
+            let windowStart = Calendar.current.date(byAdding: .day, value: -13, to: today)!
+            let windowEnd = Calendar.current.date(byAdding: .day, value: 1, to: today)!
+
             Chart(points) { point in
                 BarMark(
                     x: .value("Day", point.day, unit: .day),
                     y: .value(metric.rawValue, point.value(metric)),
-                    width: .ratio(0.55)
+                    width: .fixed(18)
                 )
                 .foregroundStyle(by: .value("Model", point.model))
-                .cornerRadius(2)
+                .cornerRadius(3)
                 .opacity(hoverDay == nil || hoverDay == point.day ? 1 : 0.35)
             }
+            // Pin the axis to the full window — otherwise a sparse ledger
+            // collapses the domain and one day's bar fills the plot.
+            .chartXScale(domain: windowStart...windowEnd)
             .chartForegroundStyleScale(domain: domain, range: range)
             .chartXAxis {
                 AxisMarks(values: .stride(by: .day, count: 2)) {
