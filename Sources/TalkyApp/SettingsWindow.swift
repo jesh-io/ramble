@@ -18,6 +18,9 @@ final class ConfigStore: ObservableObject {
     }
 }
 
+/// Native preferences window: toolbar-style tabs (à la Safari/Xcode
+/// settings), window title tracks the selected tab, window animates to
+/// each tab's natural size.
 @MainActor
 final class SettingsWindowController {
     private var window: NSWindow?
@@ -27,37 +30,41 @@ final class SettingsWindowController {
         self.store = store
     }
 
+    private func makeWindow() -> NSWindow {
+        let tabs = NSTabViewController()
+        tabs.tabStyle = .toolbar
+        tabs.canPropagateSelectedChildViewControllerTitle = true
+
+        func add(_ title: String, _ symbol: String, _ view: some View) {
+            let hosting = NSHostingController(rootView: view)
+            hosting.title = title
+            hosting.sizingOptions = .preferredContentSize
+            let item = NSTabViewItem(viewController: hosting)
+            item.label = title
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            tabs.addTabViewItem(item)
+        }
+
+        add("General", "gearshape", GeneralTab(store: store).frame(width: 620))
+        add("Cleanup", "sparkles", CleanupTab(store: store).frame(width: 620, height: 640))
+        add("Vocabulary", "character.book.closed", VocabularyTab(store: store).frame(width: 620, height: 480))
+        add("Storage", "internaldrive", StorageTab(store: store).frame(width: 620))
+
+        let window = NSWindow(contentViewController: tabs)
+        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.toolbarStyle = .preference
+        window.titlebarSeparatorStyle = .automatic
+        window.isReleasedWhenClosed = false
+        window.center()
+        return window
+    }
+
     func show() {
         if window == nil {
-            let hosting = NSHostingController(rootView: SettingsView(store: store))
-            let window = NSWindow(contentViewController: hosting)
-            window.title = "Talky Settings"
-            window.styleMask = [.titled, .closable, .miniaturizable]
-            window.setContentSize(NSSize(width: 640, height: 520))
-            window.isReleasedWhenClosed = false
-            window.center()
-            self.window = window
+            window = makeWindow()
         }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
-    }
-}
-
-struct SettingsView: View {
-    @ObservedObject var store: ConfigStore
-
-    var body: some View {
-        TabView {
-            GeneralTab(store: store)
-                .tabItem { Label("General", systemImage: "gearshape") }
-            CleanupTab(store: store)
-                .tabItem { Label("Cleanup", systemImage: "sparkles") }
-            VocabularyTab(store: store)
-                .tabItem { Label("Vocabulary", systemImage: "character.book.closed") }
-            StorageTab(store: store)
-                .tabItem { Label("Storage", systemImage: "internaldrive") }
-        }
-        .frame(width: 640, height: 520)
     }
 }
 

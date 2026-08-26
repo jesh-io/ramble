@@ -37,7 +37,8 @@ public final class MicCapture {
         let rms = sqrt(sum / Float(buffer.frameLength))
         guard rms > 0 else { return 0 }
         let db = 20 * log10(rms)                  // ~-60 (silence) … 0 (max)
-        return max(0, min(1, (db + 50) / 42))     // speech lands ~0.3–0.9
+        let norm = max(0, min(1, (db + 54) / 36))
+        return pow(norm, 0.75)                    // lift mids: speech ~0.5–1.0
     }
 
     /// Starts capture. If `recordTo` is set, audio is also encoded to that

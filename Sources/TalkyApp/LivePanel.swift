@@ -172,8 +172,11 @@ final class LivePanel: NSObject {
         panel.orderFrontRegardless()
     }
 
-    /// Minimal mode: dot + elapsed time, nothing else.
+    /// Minimal mode: dot + elapsed time, nothing else. The timer is
+    /// fixed-width, so skip the anti-jitter sticky width — otherwise the
+    /// wider "Listening…" first render leaves dead space in the pill.
     func updateElapsed(_ elapsed: String) {
+        stickyWidth = 0
         render(NSAttributedString(
             string: elapsed,
             attributes: [
