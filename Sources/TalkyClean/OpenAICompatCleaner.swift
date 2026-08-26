@@ -11,6 +11,7 @@ public struct OpenAICompatCleaner: TextCleaner {
     private let model: String
     private let apiKey: String?
     private let systemPrompt: String
+    private let temperature: Double
     private let timeout: TimeInterval
 
     public init(provider: CleanupProvider, systemPrompt: String, timeout: TimeInterval = 30) throws {
@@ -23,6 +24,7 @@ public struct OpenAICompatCleaner: TextCleaner {
         self.model = provider.model
         self.apiKey = provider.resolvedAPIKey
         self.systemPrompt = systemPrompt
+        self.temperature = provider.temperature ?? 0.1
         self.timeout = timeout
     }
 
@@ -38,7 +40,7 @@ public struct OpenAICompatCleaner: TextCleaner {
         }
         let body: [String: Any] = [
             "model": model,
-            "temperature": 0.1,
+            "temperature": temperature,
             "stream": false,
             "messages": [
                 ["role": "system", "content": systemPrompt],

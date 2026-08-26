@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "TalkyAudio", targets: ["TalkyAudio"]),
         .library(name: "TalkyTranscribe", targets: ["TalkyTranscribe"]),
         .library(name: "TalkyClean", targets: ["TalkyClean"]),
+        .library(name: "TalkyProviders", targets: ["TalkyProviders"]),
         .executable(name: "talky", targets: ["TalkyCLI"]),
         .executable(name: "TalkyApp", targets: ["TalkyApp"]),
     ],
@@ -20,12 +21,13 @@ let package = Package(
         .target(name: "TalkyAudio", dependencies: ["TalkyCore"], swiftSettings: swiftSettings),
         .target(name: "TalkyTranscribe", dependencies: ["TalkyCore"], swiftSettings: swiftSettings),
         .target(name: "TalkyClean", dependencies: ["TalkyCore"], swiftSettings: swiftSettings),
+        .target(name: "TalkyProviders", dependencies: ["TalkyCore"], swiftSettings: swiftSettings),
         .target(
             name: "TalkyKit",
-            dependencies: ["TalkyCore", "TalkyAudio", "TalkyTranscribe", "TalkyClean"],
+            dependencies: ["TalkyCore", "TalkyAudio", "TalkyTranscribe", "TalkyClean", "TalkyProviders"],
             swiftSettings: swiftSettings
         ),
-        .executableTarget(name: "TalkyCLI", dependencies: ["TalkyKit"], swiftSettings: swiftSettings),
-        .executableTarget(name: "TalkyApp", dependencies: ["TalkyKit"], swiftSettings: swiftSettings),
+        .executableTarget(name: "TalkyCLI", dependencies: ["TalkyKit", "TalkyProviders"], swiftSettings: swiftSettings),
+        .executableTarget(name: "TalkyApp", dependencies: ["TalkyKit", "TalkyProviders"], swiftSettings: swiftSettings),
     ]
 )

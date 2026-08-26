@@ -3,6 +3,7 @@ import Foundation
 import TalkyCore
 import TalkyAudio
 import TalkyClean
+import TalkyProviders
 import TalkyTranscribe
 
 /// Orchestrates one push-to-talk dictation cycle:
@@ -39,9 +40,16 @@ public final class DictationSession: @unchecked Sendable {
     private var stream: TranscriptionStream?
     private var eventTask: Task<Void, Never>?
     private var cleanupTask: Task<String?, Never>?
+    private var startupTask: Task<Void, Never>?
     private var finalizedText = ""
     private var sessionDir: URL?
     private var recordStartDate: Date?
+
+    // The mic starts capturing before the speech stream finishes spinning
+    // up; early buffers queue here and flush once the stream attaches.
+    private let feedLock = NSLock()
+    private var pendingBuffers: [AVAudioPCMBuffer] = []
+    private var streamReady = false
 
     private var timestamp: String { ISO8601DateFormatter().string(from: Date()) }
 
@@ -68,49 +76,87 @@ public final class DictationSession: @unchecked Sendable {
         }
         do {
             finalizedText = ""
-            let stream = try await transcriber.makeStream(inputFormat: mic.inputFormat)
-            self.stream = stream
+            pendingBuffers = []
+            streamReady = false
 
-            eventTask = Task { [weak self] in
-                do {
-                    for try await event in stream.events {
-                        guard let self else { return }
-                        switch event {
-                        case .partial(let text):
-                            self.emit(.liveText(finalized: self.finalizedText, volatile: text))
-                        case .segment(let segment):
-                            self.finalizedText = Transcript(
-                                segments: [TranscriptSegment(text: self.finalizedText), segment]
-                            ).text
-                            self.emit(.liveText(finalized: self.finalizedText, volatile: ""))
-                        }
-                    }
-                } catch {
-                    self?.emit(.error("Transcription failed: \(error.localizedDescription)"))
-                }
-            }
-
+            // Start capturing IMMEDIATELY — the speech stream takes time to
+            // spin up, and any words spoken meanwhile must not be lost.
+            // Audio also hits the session recording from the first buffer.
             if config.recordings.enabled {
                 sessionDir = try? RecordingStore.newSessionDir()
             }
             try mic.start(recordTo: sessionDir?.appendingPathComponent("audio.m4a")) { [weak self] buffer in
                 guard let self else { return }
-                self.stream?.feed(buffer)
                 self.emit(.audioLevel(MicCapture.level(of: buffer)))
+                self.feedLock.lock()
+                if self.streamReady, let stream = self.stream {
+                    self.feedLock.unlock()
+                    stream.feed(buffer)
+                } else {
+                    self.pendingBuffers.append(buffer)
+                    self.feedLock.unlock()
+                }
             }
             recordStartDate = Date()
             setState(.recording)
+
+            let inputFormat = mic.inputFormat
+            startupTask = Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let stream = try await self.transcriber.makeStream(inputFormat: inputFormat)
+                    self.stream = stream
+
+                    self.eventTask = Task { [weak self] in
+                        do {
+                            for try await event in stream.events {
+                                guard let self else { return }
+                                switch event {
+                                case .partial(let text):
+                                    self.emit(.liveText(finalized: self.finalizedText, volatile: text))
+                                case .segment(let segment):
+                                    self.finalizedText = Transcript(
+                                        segments: [TranscriptSegment(text: self.finalizedText), segment]
+                                    ).text
+                                    self.emit(.liveText(finalized: self.finalizedText, volatile: ""))
+                                }
+                            }
+                        } catch {
+                            self?.emit(.error("Transcription failed: \(error.localizedDescription)"))
+                        }
+                    }
+
+                    // Flush everything captured during spin-up, then go live.
+                    let backlog = self.feedLock.withLock {
+                        let queued = self.pendingBuffers
+                        self.pendingBuffers = []
+                        self.streamReady = true
+                        return queued
+                    }
+                    for buffer in backlog {
+                        stream.feed(buffer)
+                    }
+                } catch {
+                    self.emit(.error("Could not start transcription: \(error.localizedDescription)"))
+                }
+            }
         } catch {
-            stream?.cancel()
-            stream = nil
             emit(.error("Could not start dictation: \(error.localizedDescription)"))
         }
     }
 
     /// Stops recording, finalizes, cleans, and emits `.result`.
     public func stop() async {
-        guard state == .recording, let stream else { return }
+        guard state == .recording else { return }
         mic.stop()
+        // If the user stops during spin-up, wait for the stream to attach
+        // (the backlog flush delivers everything they said).
+        await startupTask?.value
+        startupTask = nil
+        guard let stream else {
+            setState(.idle)
+            return
+        }
         if let start = recordStartDate {
             UsageLog.record(
                 kind: "stt", provider: transcriber.id, model: "SpeechAnalyzer/\(config.locale)",
@@ -129,7 +175,7 @@ public final class DictationSession: @unchecked Sendable {
             var text = Vocabulary.applyKnownMishearings(
                 to: SpokenCommands.apply(to: raw), vocabulary: config.vocabulary)
             var usedProvider: String? = nil
-            if !text.isEmpty, config.cleanup.enabled, let provider = config.cleanup.activeProvider {
+            if !text.isEmpty, config.cleanup.enabled, let provider = ProviderRegistry.activeCleanupProvider(config) {
                 emit(.cleaningStarted)
                 let base = text
                 let config = config
@@ -204,6 +250,8 @@ public final class DictationSession: @unchecked Sendable {
     public func cancelRecording() {
         guard state == .recording else { return }
         mic.stop()
+        startupTask?.cancel()
+        startupTask = nil
         stream?.cancel()
         stream = nil
         eventTask?.cancel()

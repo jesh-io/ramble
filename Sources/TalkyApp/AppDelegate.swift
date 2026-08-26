@@ -1,6 +1,7 @@
 import AppKit
 import TalkyCore
 import TalkyKit
+import TalkyProviders
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -124,7 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(cleanupItem)
 
         let modelsMenu = NSMenu()
-        for provider in config.cleanup.providers {
+        for provider in ProviderRegistry.allCleanupProviders(config) {
             let entry = item("\(provider.id)  (\(provider.model))", #selector(selectProvider(_:)))
             entry.representedObject = provider.id
             entry.state = provider.id == config.cleanup.provider ? .on : .off

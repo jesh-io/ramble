@@ -1,6 +1,7 @@
 import Foundation
 import TalkyCore
 import TalkyClean
+import TalkyProviders
 import TalkyTranscribe
 
 /// Convenience entry points for SDK consumers.
@@ -12,7 +13,7 @@ public enum TalkyKit {
 
     /// Cleans text with the active cleanup provider from config.
     public static func cleanText(_ text: String, config: TalkyConfig) async throws -> String {
-        guard let provider = config.cleanup.activeProvider else {
+        guard let provider = ProviderRegistry.activeCleanupProvider(config) else {
             throw TalkyError("No cleanup provider configured")
         }
         let cleaner = try CleanerFactory.make(
@@ -34,7 +35,7 @@ public enum TalkyKit {
     public static func extractVocabulary(
         original: String, corrected: String, config: TalkyConfig
     ) async throws -> [String] {
-        guard let provider = config.cleanup.activeProvider else {
+        guard let provider = ProviderRegistry.activeCleanupProvider(config) else {
             throw TalkyError("No cleanup provider configured")
         }
         let prompt = """

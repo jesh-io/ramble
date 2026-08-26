@@ -18,10 +18,13 @@ public struct CleanupProvider: Codable, Sendable, Equatable {
     /// Leave nil for local models (cost 0).
     public var inputCostPerMTok: Double?
     public var outputCostPerMTok: Double?
+    /// Sampling temperature (default 0.1 — cleanup should be deterministic).
+    public var temperature: Double?
 
     public init(id: String, baseURL: String, model: String, apiKeyEnv: String? = nil,
                 apiKey: String? = nil, engine: String? = nil,
-                inputCostPerMTok: Double? = nil, outputCostPerMTok: Double? = nil) {
+                inputCostPerMTok: Double? = nil, outputCostPerMTok: Double? = nil,
+                temperature: Double? = nil) {
         self.id = id
         self.baseURL = baseURL
         self.model = model
@@ -30,6 +33,7 @@ public struct CleanupProvider: Codable, Sendable, Equatable {
         self.engine = engine
         self.inputCostPerMTok = inputCostPerMTok
         self.outputCostPerMTok = outputCostPerMTok
+        self.temperature = temperature
     }
 
     /// Resolved API key: inline value, else the env var it names.
@@ -161,6 +165,47 @@ public struct OutputConfig: Codable, Sendable, Equatable {
     }
 }
 
+/// A named API key for an integration. One integration can have many
+/// accounts (work key, personal key, self-hosted endpoint), each with its
+/// own enablement, model allowlist, parameters, and cost overrides.
+/// Every enabled account's models become selectable cleanup providers as
+/// "<account-id>/<model>".
+public struct APIAccount: Codable, Sendable, Equatable {
+    /// Your name for this key, e.g. "anthropic-personal".
+    public var id: String
+    /// Provider plugin id: "anthropic", "openai", "groq", "ollama", …
+    public var provider: String
+    public var enabled: Bool
+    /// Env var holding the key (preferred) or an inline key (discouraged).
+    public var apiKeyEnv: String?
+    public var apiKey: String?
+    /// Override the plugin's default base URL (e.g. a proxy or self-host).
+    public var baseURL: String?
+    /// Models available through this key. Empty = the plugin's catalog.
+    public var models: [String]
+    /// Per-key parameters.
+    public var temperature: Double?
+    /// Cost-rate overrides (USD/M tokens); nil = plugin catalog defaults.
+    public var inputCostPerMTok: Double?
+    public var outputCostPerMTok: Double?
+
+    public init(id: String, provider: String, enabled: Bool = true,
+                apiKeyEnv: String? = nil, apiKey: String? = nil, baseURL: String? = nil,
+                models: [String] = [], temperature: Double? = nil,
+                inputCostPerMTok: Double? = nil, outputCostPerMTok: Double? = nil) {
+        self.id = id
+        self.provider = provider
+        self.enabled = enabled
+        self.apiKeyEnv = apiKeyEnv
+        self.apiKey = apiKey
+        self.baseURL = baseURL
+        self.models = models
+        self.temperature = temperature
+        self.inputCostPerMTok = inputCostPerMTok
+        self.outputCostPerMTok = outputCostPerMTok
+    }
+}
+
 public struct RecordingsConfig: Codable, Sendable, Equatable {
     /// Save each dictation's audio + transcript to the recordings folder.
     public var enabled: Bool
@@ -192,6 +237,8 @@ public struct TalkyConfig: Codable, Sendable, Equatable {
     public var cleanup: CleanupConfig
     public var output: OutputConfig
     public var recordings: RecordingsConfig
+    /// Named API keys per integration; see `APIAccount`.
+    public var accounts: [APIAccount]
     /// Personal vocabulary: project names, jargon, people — exact spellings
     /// the speech engine tends to mishear. Injected into the cleanup prompt
     /// so mishearings get corrected back to these spellings.
@@ -203,16 +250,19 @@ public struct TalkyConfig: Codable, Sendable, Equatable {
         cleanup: .default,
         output: .default,
         recordings: .default,
+        accounts: [],
         vocabulary: []
     )
 
     public init(hotkey: String, locale: String, cleanup: CleanupConfig, output: OutputConfig,
-                recordings: RecordingsConfig = .default, vocabulary: [String] = []) {
+                recordings: RecordingsConfig = .default, accounts: [APIAccount] = [],
+                vocabulary: [String] = []) {
         self.hotkey = hotkey
         self.locale = locale
         self.cleanup = cleanup
         self.output = output
         self.recordings = recordings
+        self.accounts = accounts
         self.vocabulary = vocabulary
     }
 
@@ -263,6 +313,7 @@ public struct TalkyConfig: Codable, Sendable, Equatable {
         cleanup = try c.decodeIfPresent(CleanupConfig.self, forKey: .cleanup) ?? d.cleanup
         output = try c.decodeIfPresent(OutputConfig.self, forKey: .output) ?? d.output
         recordings = try c.decodeIfPresent(RecordingsConfig.self, forKey: .recordings) ?? d.recordings
+        accounts = try c.decodeIfPresent([APIAccount].self, forKey: .accounts) ?? d.accounts
         vocabulary = try c.decodeIfPresent([String].self, forKey: .vocabulary) ?? d.vocabulary
     }
 

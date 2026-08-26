@@ -1,5 +1,6 @@
 import SwiftUI
 import TalkyCore
+import TalkyProviders
 
 /// Observable wrapper around TalkyConfig: every mutation persists to disk
 /// and notifies the app so hotkey/menu/state stay current.
@@ -47,6 +48,7 @@ final class SettingsWindowController {
 
         add("General", "gearshape", GeneralTab(store: store).frame(width: 620))
         add("Cleanup", "sparkles", CleanupTab(store: store).frame(width: 620, height: 640))
+        add("Accounts", "key", AccountsTab(store: store).frame(width: 620, height: 560))
         add("Vocabulary", "character.book.closed", VocabularyTab(store: store).frame(width: 620, height: 480))
         add("Storage", "internaldrive", StorageTab(store: store).frame(width: 620))
 
@@ -102,7 +104,7 @@ private struct CleanupTab: View {
             Section {
                 Toggle("Clean up transcripts with AI", isOn: $store.config.cleanup.enabled)
                 Picker("Active model", selection: $store.config.cleanup.provider) {
-                    ForEach(store.config.cleanup.providers, id: \.id) { provider in
+                    ForEach(ProviderRegistry.allCleanupProviders(store.config), id: \.id) { provider in
                         Text("\(provider.id) — \(provider.model)").tag(provider.id)
                     }
                 }
@@ -148,6 +150,104 @@ private struct CleanupTab: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Named API keys per integration. Each account exposes its allowed models
+/// as selectable cleanup providers ("account-id/model").
+private struct AccountsTab: View {
+    @ObservedObject var store: ConfigStore
+    @State private var newProvider = "anthropic"
+
+    private var cleanupPlugins: [ProviderPlugin] {
+        ProviderRegistry.all.filter { $0.kind == .cleanup && $0.available }
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                HStack {
+                    Picker("Integration", selection: $newProvider) {
+                        ForEach(cleanupPlugins, id: \.id) { plugin in
+                            Text(plugin.name).tag(plugin.id)
+                        }
+                    }
+                    Button("Add Account") { addAccount() }
+                }
+                Text("One integration can have many keys — work, personal, a proxy — each with its own models, parameters, and cost rates. Enabled accounts' models appear in the Cleanup Model menus.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Accounts (\(store.config.accounts.count))") {
+                ForEach($store.config.accounts, id: \.id) { $account in
+                    DisclosureGroup {
+                        TextField("Name", text: $account.id)
+                        Toggle("Enabled", isOn: $account.enabled)
+                        TextField("API key env var", text: Binding(
+                            get: { account.apiKeyEnv ?? "" },
+                            set: { account.apiKeyEnv = $0.isEmpty ? nil : $0 }))
+                        keyStatus(account)
+                        TextField("Base URL override (optional)", text: Binding(
+                            get: { account.baseURL ?? "" },
+                            set: { account.baseURL = $0.isEmpty ? nil : $0 }))
+                        TextField("Models (comma-separated; empty = full catalog)", text: Binding(
+                            get: { account.models.joined(separator: ", ") },
+                            set: { account.models = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }))
+                        if let plugin = ProviderRegistry.plugin(id: account.provider), !plugin.models.isEmpty {
+                            Text("Catalog: " + plugin.models.map(\.id).joined(separator: ", "))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        HStack {
+                            Text("Temperature")
+                            Spacer()
+                            TextField("default", value: $account.temperature, format: .number)
+                                .frame(width: 70)
+                        }
+                        Button("Remove Account", role: .destructive) {
+                            store.config.accounts.removeAll { $0.id == account.id }
+                        }
+                    } label: {
+                        HStack {
+                            Text(account.id)
+                            Text(ProviderRegistry.plugin(id: account.provider)?.name ?? account.provider)
+                                .foregroundStyle(.secondary)
+                            if !account.enabled {
+                                Text("disabled").font(.caption).foregroundStyle(.orange)
+                            }
+                        }
+                    }
+                }
+                if store.config.accounts.isEmpty {
+                    Text("No accounts yet. Local integrations (Ollama, Apple Intelligence) work without one.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private func keyStatus(_ account: APIAccount) -> some View {
+        if let plugin = ProviderRegistry.plugin(id: account.provider), plugin.apiKeyRequired {
+            let env = account.apiKeyEnv ?? plugin.keyEnvSuggestion ?? ""
+            let present = !env.isEmpty && ProcessInfo.processInfo.environment[env]?.isEmpty == false
+            Label(
+                present ? "Key found in $\(env)" : "No key in $\(env) — export it or launch Talky from a shell that has it",
+                systemImage: present ? "checkmark.circle" : "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(present ? .green : .orange)
+        }
+    }
+
+    private func addAccount() {
+        guard let plugin = ProviderRegistry.plugin(id: newProvider) else { return }
+        var id = plugin.id
+        var n = 2
+        while store.config.accounts.contains(where: { $0.id == id }) {
+            id = "\(plugin.id)-\(n)"
+            n += 1
+        }
+        store.config.accounts.append(APIAccount(
+            id: id, provider: plugin.id, apiKeyEnv: plugin.keyEnvSuggestion))
     }
 }
 

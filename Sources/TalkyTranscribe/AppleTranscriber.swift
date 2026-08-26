@@ -39,8 +39,16 @@ public final class AppleTranscriber: Transcriber, @unchecked Sendable {
         )
     }
 
+    // Asset/locale checks hit slow system services; cache per process so
+    // dictation startup stays instant after the first run.
+    private static let preparedLock = NSLock()
+    private nonisolated(unsafe) static var preparedLocales: Set<String> = []
+
     /// Ensures the on-device model for our locale is installed.
     public func prepare() async throws {
+        let key = locale.identifier(.bcp47)
+        let alreadyPrepared = Self.preparedLock.withLock { Self.preparedLocales.contains(key) }
+        if alreadyPrepared { return }
         let supported = await SpeechTranscriber.supportedLocales
         guard supported.contains(where: {
             $0.identifier(.bcp47) == locale.identifier(.bcp47)
@@ -51,6 +59,7 @@ public final class AppleTranscriber: Transcriber, @unchecked Sendable {
         if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
             try await request.downloadAndInstall()
         }
+        Self.preparedLock.withLock { _ = Self.preparedLocales.insert(key) }
     }
 
     public func makeStream(inputFormat: AVAudioFormat) async throws -> TranscriptionStream {

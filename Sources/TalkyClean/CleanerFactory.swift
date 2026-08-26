@@ -22,6 +22,8 @@ public enum CleanerFactory {
         switch engine {
         case "openai":
             return try OpenAICompatCleaner(provider: provider, systemPrompt: systemPrompt, timeout: timeout)
+        case "anthropic":
+            return try AnthropicCleaner(provider: provider, systemPrompt: systemPrompt, timeout: timeout)
         case "apple":
             return AppleFMCleaner(id: provider.id, systemPrompt: systemPrompt)
         default:

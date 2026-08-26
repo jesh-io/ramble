@@ -3,6 +3,7 @@ import Foundation
 import TalkyCore
 import TalkyAudio
 import TalkyClean
+import TalkyProviders
 import TalkyTranscribe
 
 /// One-shot transcription of an audio or video file.
@@ -40,7 +41,7 @@ public enum FileTranscription {
         }
 
         guard clean, !transcript.isEmpty, config.cleanup.enabled,
-              let provider = config.cleanup.activeProvider else {
+              let provider = ProviderRegistry.activeCleanupProvider(config) else {
             return Result(transcript: transcript, cleaned: nil, warning: nil)
         }
         do {

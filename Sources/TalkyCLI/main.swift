@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import TalkyCore
 import TalkyKit
+import TalkyProviders
 
 let usage = """
 talky — local voice-to-text
@@ -105,7 +106,7 @@ case "usage":
         agg[key] = a
     }
     func cost(model: String, tokensIn: Int, tokensOut: Int) -> Double? {
-        guard let p = config.cleanup.providers.first(where: { $0.model == model }),
+        guard let p = ProviderRegistry.allCleanupProviders(config).first(where: { $0.model == model }),
               p.inputCostPerMTok != nil || p.outputCostPerMTok != nil else { return nil }
         return Double(tokensIn) / 1e6 * (p.inputCostPerMTok ?? 0)
             + Double(tokensOut) / 1e6 * (p.outputCostPerMTok ?? 0)
@@ -156,7 +157,7 @@ case "vocab":
 case "eval":
     var config = TalkyConfig.load()
     if args.count > 1 {
-        guard config.cleanup.providers.contains(where: { $0.id == args[1] }) else {
+        guard ProviderRegistry.allCleanupProviders(config).contains(where: { $0.id == args[1] }) else {
             fail("Unknown provider '\(args[1])'")
         }
         config.cleanup.provider = args[1]
@@ -211,7 +212,7 @@ case "eval":
 case "models":
     let config = TalkyConfig.load()
     print("cleanup: \(config.cleanup.enabled ? "enabled" : "disabled")")
-    for provider in config.cleanup.providers {
+    for provider in ProviderRegistry.allCleanupProviders(config) {
         let active = provider.id == config.cleanup.provider ? "* " : "  "
         let key = provider.apiKeyEnv.map { " (key: $\($0))" } ?? ""
         print("\(active)\(provider.id): \(provider.model) @ \(provider.baseURL)\(key)")
@@ -221,7 +222,7 @@ case "use":
     guard args.count > 1 else { fail("usage: talky use <provider-id>") }
     var config = TalkyConfig.load()
     let id = args[1]
-    guard config.cleanup.providers.contains(where: { $0.id == id }) else {
+    guard ProviderRegistry.allCleanupProviders(config).contains(where: { $0.id == id }) else {
         fail("Unknown provider '\(id)'. Run `talky models` to list, or add it to \(TalkyConfig.fileURL.path)")
     }
     config.cleanup.provider = id
