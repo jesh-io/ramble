@@ -16,9 +16,11 @@ public final class GestureRecognizer: @unchecked Sendable {
     private let taps: Int
 
     // Tuning
-    private let tapMaxDuration: TimeInterval = 0.35
-    private let tapMaxDrift: Float = 0.06        // normalized trackpad units
-    private let interTapGap: TimeInterval = 0.45
+    private let tapMaxDuration: TimeInterval = 0.5   // staggered 3-finger landings need room
+    private let tapMaxDrift: Float = 0.08            // normalized trackpad units
+    private let interTapGap: TimeInterval = 0.6
+
+    private let debug = ProcessInfo.processInfo.environment["TALKY_GESTURE_DEBUG"] != nil
 
     private var task: Task<Void, Never>?
 
@@ -71,6 +73,10 @@ public final class GestureRecognizer: @unchecked Sendable {
             if let began = touchStart {
                 let duration = now.timeIntervalSince(began)
                 let clean = duration <= tapMaxDuration && peakCount == fingers && !drifted
+                if debug {
+                    NSLog("Talky gesture: lift after %.0fms peak=%d drifted=%@ -> %@",
+                          duration * 1000, peakCount, drifted ? "yes" : "no", clean ? "TAP" : "reject")
+                }
                 reset()
                 if clean {
                     registerTap(at: now)
@@ -84,7 +90,6 @@ public final class GestureRecognizer: @unchecked Sendable {
 
         if touchStart == nil {
             touchStart = now
-            startCentroid = centroid(active)
         }
         peakCount = max(peakCount, active.count)
 
@@ -92,13 +97,21 @@ public final class GestureRecognizer: @unchecked Sendable {
         if peakCount > fingers {
             drifted = true
         }
-        // A tap doesn't travel; swipes and drags do.
-        if let start = startCentroid, active.count == peakCount {
+
+        // Fingers land in different frames, so the centroid legitimately
+        // jumps as each one arrives. Only measure travel once the full
+        // finger set is down, against where it was when it first completed.
+        if active.count == fingers {
             let current = centroid(active)
-            if abs(current.x - start.x) > tapMaxDrift || abs(current.y - start.y) > tapMaxDrift {
-                drifted = true
+            if let start = startCentroid {
+                if abs(current.x - start.x) > tapMaxDrift || abs(current.y - start.y) > tapMaxDrift {
+                    drifted = true
+                }
+            } else {
+                startCentroid = current
             }
         }
+
         // Held too long = a press/drag, not a tap.
         if let began = touchStart, now.timeIntervalSince(began) > tapMaxDuration {
             drifted = true
@@ -113,6 +126,9 @@ public final class GestureRecognizer: @unchecked Sendable {
         }
         lastTapEnd = time
 
+        if debug {
+            NSLog("Talky gesture: tap %d/%d", tapCount, taps)
+        }
         if tapCount >= taps {
             tapCount = 0
             lastTapEnd = nil
