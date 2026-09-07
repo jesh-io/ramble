@@ -253,7 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.handle(event)
         }
 
-        playSound("Pop")
+        playSound(.start)
         setRecordingIcon()
         if captions != "off" {
             panel.show(status: "●")
@@ -287,6 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func stopDictation() {
         guard let session, session.state == .recording, !busy else { return }
         busy = true
+        playSound(.stop)
         setProcessingIcon()
         recordingTimer?.invalidate()
         recordingTimer = nil
@@ -323,7 +324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             session = nil
             setIdleIcon()
             rebuildMenu()
-            defer { playSound("Bottle") }
+            defer { playSound(.done) }
 
             guard !text.isEmpty else {
                 panel.setStatus("○", message: "Heard nothing.")
@@ -378,9 +379,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func playSound(_ name: String) {
+    private enum ChimeKind { case start, stop, done }
+    private func playSound(_ kind: ChimeKind) {
         guard config.output.sounds else { return }
-        NSSound(named: name)?.play()
+        switch kind {
+        case .start: Chime.shared.start()
+        case .stop: Chime.shared.stop()
+        case .done: Chime.shared.done()
+        }
     }
 
     // MARK: - Menu actions

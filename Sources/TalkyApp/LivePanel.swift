@@ -94,12 +94,15 @@ final class LivePanel: NSObject {
             backing: .buffered,
             defer: true
         )
-        panel.level = .statusBar
+        // .statusBar sits below a fullscreen app's space; a shielding-level
+        // window with fullScreenAuxiliary shows over fullscreen apps too.
+        panel.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.isReleasedWhenClosed = false
 
         pill = NSView()
