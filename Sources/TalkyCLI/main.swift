@@ -3,6 +3,7 @@ import AppKit
 import TalkyCore
 import TalkyKit
 import TalkyProviders
+import TalkyClean
 
 let usage = """
 talky — local voice-to-text
@@ -12,6 +13,7 @@ USAGE:
   talky toggle | start | stop                    Control the Talky menu bar app
   talky clean [text]                             Clean text (arg or stdin) with the active model
   talky history [n]                              Show last n dictations, raw vs cleaned (default 3)
+  talky audit [n]                                Diff-audit cleanup of last n dictations for hallucinations
   talky learn "<Term> = <misheard1>, <m2>"       Add a vocabulary term (= part optional)
   talky vocab                                    List vocabulary entries
   talky eval [provider-id]                       Score cleanup against your corrected dictations
@@ -84,6 +86,37 @@ case "history":
         print()
     }
     print("recordings (audio + per-session transcripts): \(RecordingStore.baseDir.path)")
+
+case "audit":
+    let count = args.count > 1 ? (Int(args[1]) ?? 5) : 5
+    let config = TalkyConfig.load()
+    let sessions = RecordingStore.sessions(limit: count)
+    guard !sessions.isEmpty else { print("No sessions yet."); break }
+    for session in sessions {
+        guard let r = session.record, let cleaned = r.cleaned else { continue }
+        let diff = TranscriptDiff(input: r.raw, output: cleaned)
+        let long = diff.insertedRuns.filter { $0.wordCount > config.cleanup.maxInsertedRun }
+        let verdict = long.isEmpty ? "ok" : "HALLUCINATION SUSPECTED"
+        print(String(format: "── %@  [%@]  similarity %.1f%%  +%d/-%d words  %@",
+                     session.dir.lastPathComponent, r.provider ?? "raw",
+                     diff.similarity * 100,
+                     diff.insertedRuns.reduce(0) { $0 + $1.wordCount }, diff.deletedWords, verdict))
+        if let note = r.guardNote { print("   guard: \(note)") }
+        for run in long { print("   inserted (\(run.wordCount) words): \"\(run.text.prefix(120))\"") }
+    }
+
+case "guard":
+    // QA: talky guard <raw.txt> <cleaned.txt> — run the diff guard on two files.
+    guard args.count > 2,
+          let raw = try? String(contentsOfFile: args[1], encoding: .utf8),
+          let cleaned = try? String(contentsOfFile: args[2], encoding: .utf8) else {
+        fail("usage: talky guard <raw.txt> <cleaned.txt>")
+    }
+    let config = TalkyConfig.load()
+    let result = CleanupValidator.guardOutput(raw: raw, cleaned: cleaned, maxInsertedRun: config.cleanup.maxInsertedRun)
+    print(String(format: "similarity %.1f%%  removed %d word(s)  rejected: %@", result.similarity * 100, result.removedWords, result.rejected ? "yes" : "no"))
+    for run in result.removedRuns { print("  stripped: \"\(run.prefix(160))\"") }
+    print("--- repaired text:\n" + result.text)
 
 case "recordings":
     print(RecordingStore.baseDir.path)
@@ -252,8 +285,9 @@ case "download":
 case "clean":
     let config = TalkyConfig.load()
     let input: String
-    if args.count > 1 {
-        input = args.dropFirst().joined(separator: " ")
+    let textArgs = args.dropFirst().filter { $0 != "--incremental" }
+    if !textArgs.isEmpty {
+        input = textArgs.joined(separator: " ")
     } else {
         input = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
     }
@@ -262,8 +296,31 @@ case "clean":
     }
     Task {
         do {
-            let cleaned = try await TalkyKit.cleanText(input, config: config)
-            print(cleaned)
+            if args.contains("--incremental") {
+                // Simulate live dictation: sentences "finalize" one at a time.
+                guard let provider = ProviderRegistry.activeCleanupProvider(config) else {
+                    fail("No cleanup provider configured")
+                }
+                let inc = IncrementalCleaner(config: config, provider: provider)
+                var sofar = ""
+                let sentences = input.replacingOccurrences(of: "--incremental", with: "")
+                    .components(separatedBy: ". ")
+                for (i, s) in sentences.enumerated() {
+                    sofar += (sofar.isEmpty ? "" : ". ") + s
+                    if i < sentences.count - 1 {
+                        await inc.feed(finalized: sofar)
+                        try? await Task.sleep(for: .milliseconds(200))
+                    }
+                }
+                let started = Date()
+                let out = await inc.finish(finalized: sofar)
+                fputs(String(format: "final tail wait: %.2fs\n", Date().timeIntervalSince(started)), stderr)
+                for n in await inc.guardNotes { fputs("guard: \(n)\n", stderr) }
+                print(out)
+            } else {
+                let cleaned = try await TalkyKit.cleanText(input, config: config)
+                print(cleaned)
+            }
         } catch {
             fail("Cleanup failed: \(error.localizedDescription)")
         }

@@ -24,10 +24,15 @@ public enum TalkyKit {
         let input = Vocabulary.applyKnownMishearings(
             to: SpokenCommands.apply(to: text), vocabulary: config.vocabulary)
         let cleaned = try await cleaner.clean(input)
-        guard CleanupValidator.looksFaithful(raw: input, cleaned: cleaned) else {
-            throw TalkyError("Cleanup model hallucinated (output diverges too far from input); raw kept")
+        let guarded = CleanupValidator.guardOutput(
+            raw: input, cleaned: cleaned, maxInsertedRun: config.cleanup.maxInsertedRun)
+        if guarded.rejected {
+            throw TalkyError("Cleanup model hallucinated (\(guarded.note ?? "rejected")); raw kept")
         }
-        return cleaned
+        if guarded.removedWords > 0 {
+            fputs("guard: \(guarded.note ?? "") — removed: \(guarded.removedRuns.joined(separator: " | "))\n", stderr)
+        }
+        return guarded.text
     }
 
     /// Diffs a transcript against the user's hand-corrected version and

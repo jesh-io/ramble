@@ -40,9 +40,12 @@ public enum RecordingStore {
         public let error: String?
         /// The user's hand-corrected version — golden label for evals.
         public var revision: String?
+        /// What the hallucination guard did, if anything.
+        public var guardNote: String?
 
         public init(timestamp: String, raw: String, cleaned: String?, provider: String?,
-                    segments: [TranscriptSegment], error: String? = nil, revision: String? = nil) {
+                    segments: [TranscriptSegment], error: String? = nil, revision: String? = nil,
+                    guardNote: String? = nil) {
             self.timestamp = timestamp
             self.raw = raw
             self.cleaned = cleaned
@@ -50,6 +53,7 @@ public enum RecordingStore {
             self.segments = segments
             self.error = error
             self.revision = revision
+            self.guardNote = guardNote
         }
     }
 

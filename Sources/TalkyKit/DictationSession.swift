@@ -41,6 +41,8 @@ public final class DictationSession: @unchecked Sendable {
     private var eventTask: Task<Void, Never>?
     private var cleanupTask: Task<String?, Never>?
     private var startupTask: Task<Void, Never>?
+    private var incremental: IncrementalCleaner?
+    private var guardNote: String?
     private var finalizedText = ""
     private var sessionDir: URL?
     private var recordStartDate: Date?
@@ -78,6 +80,12 @@ public final class DictationSession: @unchecked Sendable {
             finalizedText = ""
             pendingBuffers = []
             streamReady = false
+            guardNote = nil
+            incremental = nil
+            if config.cleanup.enabled, config.cleanup.incremental,
+               let provider = ProviderRegistry.activeCleanupProvider(config) {
+                incremental = IncrementalCleaner(config: config, provider: provider)
+            }
 
             // Start capturing IMMEDIATELY — the speech stream takes time to
             // spin up, and any words spoken meanwhile must not be lost.
@@ -119,6 +127,10 @@ public final class DictationSession: @unchecked Sendable {
                                         segments: [TranscriptSegment(text: self.finalizedText), segment]
                                     ).text
                                     self.emit(.liveText(finalized: self.finalizedText, volatile: ""))
+                                    if let incremental = self.incremental {
+                                        let snapshot = self.finalizedText
+                                        Task { await incremental.feed(finalized: snapshot) }
+                                    }
                                 }
                             }
                         } catch {
@@ -179,8 +191,21 @@ public final class DictationSession: @unchecked Sendable {
                 emit(.cleaningStarted)
                 let base = text
                 let config = config
+                let incremental = self.incremental
                 let task = Task<String?, Never> {
                     do {
+                        // Incremental: most of the text is already clean;
+                        // only the tail is processed now.
+                        if let incremental {
+                            let result = await incremental.finish(finalized: raw)
+                            guard !Task.isCancelled else { return nil }
+                            let notes = await incremental.guardNotes
+                            if !notes.isEmpty {
+                                self.guardNote = notes.joined(separator: "; ")
+                                self.emit(.error("Guard: " + notes.joined(separator: "; ")))
+                            }
+                            return result
+                        }
                         let cleaner = try CleanerFactory.make(
                             provider: provider,
                             systemPrompt: config.effectiveCleanupPrompt,
@@ -188,11 +213,14 @@ public final class DictationSession: @unchecked Sendable {
                         )
                         let candidate = try await cleaner.clean(base)
                         guard !Task.isCancelled else { return nil }
-                        guard CleanupValidator.looksFaithful(raw: base, cleaned: candidate) else {
-                            self.emit(.error("Cleanup model hallucinated — using raw transcript"))
-                            return nil
+                        let guarded = CleanupValidator.guardOutput(
+                            raw: base, cleaned: candidate, maxInsertedRun: config.cleanup.maxInsertedRun)
+                        if let note = guarded.note {
+                            self.guardNote = note
+                            self.emit(.error("Guard: " + note))
                         }
-                        return candidate
+                        guard !guarded.rejected else { return nil }
+                        return guarded.text
                     } catch {
                         // Skipped (cancelled) is silent; real failures fall
                         // back to raw with a note. Never lose a dictation.
@@ -208,6 +236,7 @@ public final class DictationSession: @unchecked Sendable {
                     usedProvider = provider.id
                 }
                 cleanupTask = nil
+                self.incremental = nil
             }
             if !raw.isEmpty {
                 DictationHistory.append(raw: raw, cleaned: text, provider: usedProvider)
@@ -216,7 +245,8 @@ public final class DictationSession: @unchecked Sendable {
                 RecordingStore.writeRecord(
                     RecordingStore.SessionRecord(
                         timestamp: timestamp, raw: raw, cleaned: text,
-                        provider: usedProvider, segments: transcript.segments),
+                        provider: usedProvider, segments: transcript.segments,
+                        guardNote: guardNote),
                     to: sessionDir)
             }
             RecordingStore.prune(olderThanHours: config.recordings.retentionHours)

@@ -53,13 +53,15 @@ public enum FileTranscription {
             let input = Vocabulary.applyKnownMishearings(
                 to: SpokenCommands.apply(to: transcript.text), vocabulary: config.vocabulary)
             let cleaned = try await cleaner.clean(input)
-            guard CleanupValidator.looksFaithful(raw: input, cleaned: cleaned) else {
+            let guarded = CleanupValidator.guardOutput(
+                raw: input, cleaned: cleaned, maxInsertedRun: config.cleanup.maxInsertedRun)
+            if guarded.rejected {
                 return Result(
                     transcript: transcript,
                     cleaned: nil,
                     warning: "Cleanup model hallucinated — returning raw transcript")
             }
-            return Result(transcript: transcript, cleaned: cleaned, warning: nil)
+            return Result(transcript: transcript, cleaned: guarded.text, warning: guarded.note)
         } catch {
             return Result(
                 transcript: transcript,

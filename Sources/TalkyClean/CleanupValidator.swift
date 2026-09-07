@@ -6,6 +6,35 @@ import Foundation
 /// answered a question that appeared in the dictation — we must reject it
 /// and fall back to the raw transcript.
 public enum CleanupValidator {
+    public struct GuardResult: Sendable {
+        public let text: String
+        public let similarity: Double
+        public let removedWords: Int
+        public let removedRuns: [String]
+        /// True when even after repair the output isn't trustworthy.
+        public let rejected: Bool
+        public var note: String? {
+            if rejected { return "cleanup rejected (similarity \(Int(similarity * 100))%)" }
+            if removedWords > 0 { return "stripped \(removedWords) hallucinated word(s)" }
+            return nil
+        }
+    }
+
+    /// Diff-based guard: strips inserted runs longer than `maxInsertedRun`
+    /// words (instruction/example leakage), then applies the global sanity
+    /// ratios to what remains.
+    public static func guardOutput(raw: String, cleaned: String, maxInsertedRun: Int) -> GuardResult {
+        let repaired = TranscriptDiff.repair(input: raw, output: cleaned, maxRun: maxInsertedRun)
+        let diff = TranscriptDiff(input: raw, output: repaired.text)
+        let ok = looksFaithful(raw: raw, cleaned: repaired.text)
+        return GuardResult(
+            text: ok ? repaired.text : raw,
+            similarity: diff.similarity,
+            removedWords: repaired.removedWords,
+            removedRuns: repaired.removedRuns,
+            rejected: !ok)
+    }
+
     public static func looksFaithful(raw: String, cleaned: String) -> Bool {
         let rawWords = words(raw)
         let cleanedWords = words(cleaned)
