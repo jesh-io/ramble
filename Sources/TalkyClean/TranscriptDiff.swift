@@ -122,6 +122,66 @@ public struct TranscriptDiff: Sendable {
         similarity = max(inWords, outWords) == 0 ? 1 : Double(aligned) / Double(max(inWords, outWords))
     }
 
+    // MARK: - Sentence support
+
+    /// Strips output sentences that no contiguous window of the input
+    /// supports (ordered word overlap below `minCoverage`). Catches
+    /// invented sentences assembled from vocabulary that appears elsewhere
+    /// in the transcript, which run-length detection can't see.
+    public static func stripUnsupportedSentences(input: String, output: String, minCoverage: Double = 0.6) -> (text: String, removed: [String]) {
+        let inputKeys = tokenize(input).map(\.key).filter { !$0.isEmpty }
+        guard !inputKeys.isEmpty else { return (output, []) }
+        // Split output into sentences, preserving separators.
+        var sentences: [String] = []
+        var current = ""
+        for ch in output {
+            current.append(ch)
+            if ch == "." || ch == "?" || ch == "!" || ch == "\n" {
+                sentences.append(current)
+                current = ""
+            }
+        }
+        if !current.isEmpty { sentences.append(current) }
+
+        var kept: [String] = []
+        var removed: [String] = []
+        for sentence in sentences {
+            let keys = tokenize(sentence).map(\.key).filter { !$0.isEmpty }
+            guard keys.count >= 3 else { kept.append(sentence); continue }
+            let window = min(inputKeys.count, keys.count * 2 + 2)
+            var best = 0
+            var start = 0
+            while start + min(window, inputKeys.count - start) <= inputKeys.count, start < inputKeys.count {
+                let slice = Array(inputKeys[start..<min(start + window, inputKeys.count)])
+                best = max(best, lcsLength(keys, slice))
+                if best == keys.count { break }
+                start += max(1, keys.count / 2)
+            }
+            if Double(best) / Double(keys.count) >= minCoverage {
+                kept.append(sentence)
+            } else {
+                removed.append(sentence.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+        var text = kept.joined()
+        text = text.replacingOccurrences(of: "[ \\t]{2,}", with: " ", options: .regularExpression)
+        text = text.replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
+        return (text.trimmingCharacters(in: .whitespacesAndNewlines), removed)
+    }
+
+    private static func lcsLength(_ a: [String], _ b: [String]) -> Int {
+        guard !a.isEmpty, !b.isEmpty else { return 0 }
+        var prev = Array(repeating: 0, count: b.count + 1)
+        for i in 1...a.count {
+            var row = Array(repeating: 0, count: b.count + 1)
+            for j in 1...b.count {
+                row[j] = a[i - 1] == b[j - 1] ? prev[j - 1] + 1 : max(prev[j], row[j - 1])
+            }
+            prev = row
+        }
+        return prev[b.count]
+    }
+
     // MARK: - Repair
 
     /// Removes inserted runs longer than `maxRun` words from `output`,

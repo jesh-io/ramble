@@ -14,24 +14,28 @@ public enum CleanupValidator {
         /// True when even after repair the output isn't trustworthy.
         public let rejected: Bool
         public var note: String? {
-            if rejected { return "cleanup rejected (similarity \(Int(similarity * 100))%)" }
+            if rejected { return "cleanup rejected — raw kept (similarity \(Int(similarity * 100))%)" }
             if removedWords > 0 { return "stripped \(removedWords) hallucinated word(s)" }
             return nil
         }
     }
 
-    /// Diff-based guard: strips inserted runs longer than `maxInsertedRun`
-    /// words (instruction/example leakage), then applies the global sanity
-    /// ratios to what remains.
-    public static func guardOutput(raw: String, cleaned: String, maxInsertedRun: Int) -> GuardResult {
+    /// Layered guard:
+    /// 1. strip inserted runs longer than `maxInsertedRun` words (prompt/example leakage);
+    /// 2. strip sentences no window of the input supports (invented sentences from transcript vocabulary);
+    /// 3. reject outright if alignment similarity < `minSimilarity` or the global ratios fail
+    ///    (restructuring/paraphrase) — the raw transcript is used instead.
+    public static func guardOutput(raw: String, cleaned: String, maxInsertedRun: Int, minSimilarity: Double = 0.75) -> GuardResult {
         let repaired = TranscriptDiff.repair(input: raw, output: cleaned, maxRun: maxInsertedRun)
-        let diff = TranscriptDiff(input: raw, output: repaired.text)
-        let ok = looksFaithful(raw: raw, cleaned: repaired.text)
+        let supported = TranscriptDiff.stripUnsupportedSentences(input: raw, output: repaired.text)
+        let diff = TranscriptDiff(input: raw, output: supported.text)
+        let removedWords = repaired.removedWords + supported.removed.reduce(0) { $0 + $1.split(separator: " ").count }
+        let ok = diff.similarity >= minSimilarity && looksFaithful(raw: raw, cleaned: supported.text)
         return GuardResult(
-            text: ok ? repaired.text : raw,
+            text: ok ? supported.text : raw,
             similarity: diff.similarity,
-            removedWords: repaired.removedWords,
-            removedRuns: repaired.removedRuns,
+            removedWords: removedWords,
+            removedRuns: repaired.removedRuns + supported.removed,
             rejected: !ok)
     }
 

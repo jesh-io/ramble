@@ -25,7 +25,7 @@ public enum TalkyKit {
             to: SpokenCommands.apply(to: text), vocabulary: config.vocabulary)
         let cleaned = try await cleaner.clean(input)
         let guarded = CleanupValidator.guardOutput(
-            raw: input, cleaned: cleaned, maxInsertedRun: config.cleanup.maxInsertedRun)
+            raw: input, cleaned: cleaned, maxInsertedRun: config.cleanup.maxInsertedRun, minSimilarity: config.cleanup.minSimilarity)
         if guarded.rejected {
             throw TalkyError("Cleanup model hallucinated (\(guarded.note ?? "rejected")); raw kept")
         }

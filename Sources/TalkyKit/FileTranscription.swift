@@ -54,7 +54,7 @@ public enum FileTranscription {
                 to: SpokenCommands.apply(to: transcript.text), vocabulary: config.vocabulary)
             let cleaned = try await cleaner.clean(input)
             let guarded = CleanupValidator.guardOutput(
-                raw: input, cleaned: cleaned, maxInsertedRun: config.cleanup.maxInsertedRun)
+                raw: input, cleaned: cleaned, maxInsertedRun: config.cleanup.maxInsertedRun, minSimilarity: config.cleanup.minSimilarity)
             if guarded.rejected {
                 return Result(
                     transcript: transcript,

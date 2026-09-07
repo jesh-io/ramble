@@ -14,6 +14,7 @@ USAGE:
   talky clean [text]                             Clean text (arg or stdin) with the active model
   talky history [n]                              Show last n dictations, raw vs cleaned (default 3)
   talky audit [n]                                Diff-audit cleanup of last n dictations for hallucinations
+  talky guard <raw-file> <cleaned-file>          Run the hallucination guard on any pair
   talky learn "<Term> = <misheard1>, <m2>"       Add a vocabulary term (= part optional)
   talky vocab                                    List vocabulary entries
   talky eval [provider-id]                       Score cleanup against your corrected dictations

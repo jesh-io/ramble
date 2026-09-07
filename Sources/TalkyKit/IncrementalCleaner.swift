@@ -84,7 +84,7 @@ public actor IncrementalCleaner {
                 provider: provider, systemPrompt: prompt, timeout: config.cleanup.timeoutSeconds)
             let candidate = try await cleaner.clean(base)
             let guarded = CleanupValidator.guardOutput(
-                raw: base, cleaned: candidate, maxInsertedRun: config.cleanup.maxInsertedRun)
+                raw: base, cleaned: candidate, maxInsertedRun: config.cleanup.maxInsertedRun, minSimilarity: config.cleanup.minSimilarity)
             if let note = guarded.note { guardNotes.append(note) }
             usedProvider = provider.id
             return guarded.text

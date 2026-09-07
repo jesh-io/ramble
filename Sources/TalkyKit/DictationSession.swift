@@ -214,7 +214,7 @@ public final class DictationSession: @unchecked Sendable {
                         let candidate = try await cleaner.clean(base)
                         guard !Task.isCancelled else { return nil }
                         let guarded = CleanupValidator.guardOutput(
-                            raw: base, cleaned: candidate, maxInsertedRun: config.cleanup.maxInsertedRun)
+                            raw: base, cleaned: candidate, maxInsertedRun: config.cleanup.maxInsertedRun, minSimilarity: config.cleanup.minSimilarity)
                         if let note = guarded.note {
                             self.guardNote = note
                             self.emit(.error("Guard: " + note))
