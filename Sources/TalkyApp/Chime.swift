@@ -28,17 +28,17 @@ final class Chime {
 
     /// Recording started: two quick clicks, second a touch higher (tk-TK).
     func start() {
-        play([Hit(freq: 2100), Hit(freq: 2700)])
+        play([Hit(freq: 1150, tau: 0.008), Hit(freq: 1450, tau: 0.008)])
     }
 
     /// Recording stopped: the reverse (TK-tk).
     func stop() {
-        play([Hit(freq: 2700), Hit(freq: 2100)])
+        play([Hit(freq: 1450, tau: 0.008), Hit(freq: 1150, tau: 0.008)])
     }
 
     /// Text delivered: one softer, rounder pop with a downward sweep.
     func done() {
-        play([Hit(freq: 1100, sweep: 0.45, tau: 0.014, noise: 0.15, gain: 0.7)])
+        play([Hit(freq: 750, sweep: 0.5, tau: 0.016, noise: 0.12, gain: 0.7)])
     }
 
     private func play(_ hits: [Hit]) {
