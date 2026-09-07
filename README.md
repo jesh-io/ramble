@@ -22,7 +22,15 @@ package: a core SDK plus a lightweight menu bar app and CLI on top.
 - [Ollama](https://ollama.com) (or any OpenAI-compatible server) for cleanup —
   optional; dictation works without it (raw transcript)
 
-## Build & install
+## Install (release build)
+
+Grab **Talky-macOS.zip** from the [latest release](https://github.com/jesh-io/talky/releases),
+unzip, move `Talky.app` to `/Applications`. Builds are not yet notarized,
+so on first launch right-click → **Open** (or `xattr -dr com.apple.quarantine
+/Applications/Talky.app`). Every push to `main` also produces a downloadable
+artifact under **Actions**; tags `v*` publish a Release.
+
+## Build & install (from source)
 
 ```bash
 ./scripts/build-app.sh
