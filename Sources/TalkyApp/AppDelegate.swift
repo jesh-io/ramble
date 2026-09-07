@@ -9,7 +9,7 @@ import TalkyGestures
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private var hotKey: HotKey?
+    private let bindings = BindingManager()
     private let panel = LivePanel()
     private let historyPanel = HistoryPanel()
 
@@ -97,12 +97,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func registerHotkey() {
-        hotKey = HotKey(spec: config.hotkey) { [weak self] in
-            Task { @MainActor in self?.toggle() }
-        }
-        if hotKey == nil {
-            NSLog("Talky: could not register hotkey '\(config.hotkey)'")
-        }
+        bindings.onToggle = { [weak self] in self?.toggle() }
+        bindings.onStart = { [weak self] in self?.startDictation() }
+        bindings.onStop = { [weak self] in self?.stopDictation() }
+        bindings.apply(config.bindings)
     }
 
     private func observeCLICommands() {
@@ -167,7 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(item("Paste Raw Now (skip cleanup)", #selector(skipCleanupAction)))
         }
 
-        let hotkeyItem = NSMenuItem(title: "Hotkey: \(config.hotkey)", action: nil, keyEquivalent: "")
+        let hotkeyItem = NSMenuItem(title: "Trigger: " + BindingManager.summary(config.bindings), action: nil, keyEquivalent: "")
         hotkeyItem.isEnabled = false
         menu.addItem(hotkeyItem)
         menu.addItem(.separator())
@@ -518,7 +516,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self, self.config != newConfig else { return }
                 let gestureChanged = self.config.gesture != newConfig.gesture
                 self.config = newConfig
-                self.hotKey = nil
                 self.registerHotkey()
                 if gestureChanged { self.applyGestureConfig() }
                 self.rebuildMenu()
@@ -545,7 +542,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func reloadConfig() {
         config = TalkyConfig.load()
-        hotKey = nil
         registerHotkey()
         applyGestureConfig()
         rebuildMenu()

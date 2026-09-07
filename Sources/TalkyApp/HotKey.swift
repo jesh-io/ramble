@@ -2,11 +2,42 @@ import Carbon.HIToolbox
 import AppKit
 
 /// Global hotkey via Carbon RegisterEventHotKey — works system-wide and,
-/// unlike CGEvent taps, needs no Accessibility permission.
+/// unlike CGEvent taps, needs no Accessibility permission. Reports press
+/// and (optionally) release so hold-to-talk works.
 final class HotKey {
     private var hotKeyRef: EventHotKeyRef?
-    private var handlerRef: EventHandlerRef?
-    private let handler: () -> Void
+    private let onPress: () -> Void
+    private let onRelease: (() -> Void)?
+    private let id: UInt32
+
+    // One shared Carbon handler dispatches to registered hotkeys by id.
+    private static var registry: [UInt32: HotKey] = [:]
+    private static var nextID: UInt32 = 1
+    private static var handlerRef: EventHandlerRef?
+
+    private static func installSharedHandler() {
+        guard handlerRef == nil else { return }
+        var types = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
+        ]
+        InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, event, _ in
+                var hkID = EventHotKeyID()
+                GetEventParameter(
+                    event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                    nil, MemoryLayout<EventHotKeyID>.size, nil, &hkID)
+                guard let hk = HotKey.registry[hkID.id] else { return noErr }
+                if GetEventKind(event) == UInt32(kEventHotKeyPressed) {
+                    hk.onPress()
+                } else {
+                    hk.onRelease?()
+                }
+                return noErr
+            },
+            types.count, &types, nil, &handlerRef)
+    }
 
     /// Parses specs like "ctrl+alt+cmd+d", "cmd+shift+space", "f13".
     static func parse(_ spec: String) -> (keyCode: UInt32, modifiers: UInt32)? {
@@ -25,37 +56,28 @@ final class HotKey {
         return (code, modifiers)
     }
 
-    init?(spec: String, handler: @escaping () -> Void) {
+    init?(spec: String, onPress: @escaping () -> Void, onRelease: (() -> Void)? = nil) {
         guard let (keyCode, modifiers) = Self.parse(spec) else { return nil }
-        self.handler = handler
+        self.onPress = onPress
+        self.onRelease = onRelease
+        self.id = Self.nextID
+        Self.nextID += 1
+        Self.installSharedHandler()
 
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
-        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(
-            GetApplicationEventTarget(),
-            { _, _, userData in
-                guard let userData else { return noErr }
-                Unmanaged<HotKey>.fromOpaque(userData).takeUnretainedValue().handler()
-                return noErr
-            },
-            1,
-            &eventType,
-            selfPtr,
-            &handlerRef
-        )
-
-        let hotKeyID = EventHotKeyID(signature: OSType(0x544C4B59) /* 'TLKY' */, id: 1)
+        let hotKeyID = EventHotKeyID(signature: OSType(0x544C4B59) /* 'TLKY' */, id: id)
         let status = RegisterEventHotKey(
             keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
         if status != noErr { return nil }
+        Self.registry[id] = self
+    }
+
+    convenience init?(spec: String, handler: @escaping () -> Void) {
+        self.init(spec: spec, onPress: handler, onRelease: nil)
     }
 
     deinit {
         if let hotKeyRef { UnregisterEventHotKey(hotKeyRef) }
-        if let handlerRef { RemoveEventHandler(handlerRef) }
+        HotKey.registry[id] = nil
     }
 
     private static let keyCodes: [String: UInt32] = [

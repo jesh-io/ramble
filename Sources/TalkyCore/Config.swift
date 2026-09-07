@@ -300,6 +300,70 @@ public struct GestureConfig: Codable, Sendable, Equatable {
     }
 }
 
+/// One way to trigger dictation. `type`: "hotkey" (keys), "mouse"
+/// (button 2 = middle/scroll-wheel click, 3+ = side buttons; optional
+/// modifiers; taps 1|2; swallow hides the click from other apps), or
+/// "modifier" (a modifier key alone: cmd/alt/ctrl/shift/fn, or right*
+/// variants; taps 2 = double-tap). `mode`: "toggle" or "hold" (record
+/// while held).
+public struct InputBinding: Codable, Sendable, Equatable, Identifiable {
+    public var id: String
+    public var type: String
+    public var keys: String?
+    public var button: Int?
+    public var modifiers: [String]
+    public var modifierKey: String?
+    public var taps: Int
+    public var mode: String
+    public var swallow: Bool
+
+    public init(id: String = UUID().uuidString, type: String, keys: String? = nil, button: Int? = nil,
+                modifiers: [String] = [], modifierKey: String? = nil, taps: Int = 1,
+                mode: String = "toggle", swallow: Bool = true) {
+        self.id = id
+        self.type = type
+        self.keys = keys
+        self.button = button
+        self.modifiers = modifiers
+        self.modifierKey = modifierKey
+        self.taps = taps
+        self.mode = mode
+        self.swallow = swallow
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        type = try c.decodeIfPresent(String.self, forKey: .type) ?? "hotkey"
+        keys = try c.decodeIfPresent(String.self, forKey: .keys)
+        button = try c.decodeIfPresent(Int.self, forKey: .button)
+        modifiers = try c.decodeIfPresent([String].self, forKey: .modifiers) ?? []
+        modifierKey = try c.decodeIfPresent(String.self, forKey: .modifierKey)
+        taps = try c.decodeIfPresent(Int.self, forKey: .taps) ?? 1
+        mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? "toggle"
+        swallow = try c.decodeIfPresent(Bool.self, forKey: .swallow) ?? true
+    }
+
+    public static func hotkey(_ keys: String) -> InputBinding {
+        InputBinding(type: "hotkey", keys: keys)
+    }
+
+    public var label: String {
+        let suffix = mode == "hold" ? " (hold)" : ""
+        switch type {
+        case "hotkey": return (keys ?? "?") + suffix
+        case "mouse":
+            let mods = modifiers.map { $0 + "+" }.joined()
+            let name = button == 2 ? "middle click" : "mouse button \((button ?? 0) + 1)"
+            return mods + (taps > 1 ? "double " : "") + name + suffix
+        case "modifier":
+            let key = modifierKey ?? "?"
+            return (mode == "hold" ? "hold " : taps > 1 ? "double-tap " : "tap ") + key
+        default: return type
+        }
+    }
+}
+
 public struct RecordingsConfig: Codable, Sendable, Equatable {
     /// Save each dictation's audio + transcript to the recordings folder.
     public var enabled: Bool
@@ -333,6 +397,9 @@ public struct TalkyConfig: Codable, Sendable, Equatable {
     public var recordings: RecordingsConfig
     /// Named API keys per integration; see `APIAccount`.
     public var accounts: [APIAccount]
+    /// Triggers for dictation (keyboard, mouse buttons, modifier taps).
+    /// Empty = migrated from `hotkey` on load.
+    public var bindings: [InputBinding]
     /// Trackpad gesture toggle (TalkyGestures add-on).
     public var gesture: GestureConfig
     /// Personal vocabulary: project names, jargon, people — exact spellings
@@ -347,21 +414,40 @@ public struct TalkyConfig: Codable, Sendable, Equatable {
         output: .default,
         recordings: .default,
         accounts: [],
+        bindings: [.hotkey("ctrl+alt+cmd+d")],
         gesture: .default,
         vocabulary: []
     )
 
     public init(hotkey: String, locale: String, cleanup: CleanupConfig, output: OutputConfig,
                 recordings: RecordingsConfig = .default, accounts: [APIAccount] = [],
-                gesture: GestureConfig = .default, vocabulary: [String] = []) {
+                bindings: [InputBinding] = [], gesture: GestureConfig = .default,
+                vocabulary: [String] = []) {
         self.hotkey = hotkey
         self.locale = locale
         self.cleanup = cleanup
         self.output = output
         self.recordings = recordings
         self.accounts = accounts
+        self.bindings = bindings
         self.gesture = gesture
         self.vocabulary = vocabulary
+    }
+
+    /// Lenient decoding: missing keys fall back to defaults so the config
+    /// file survives upgrades (never let a new field wipe user settings).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = Self.default
+        hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey) ?? d.hotkey
+        locale = try c.decodeIfPresent(String.self, forKey: .locale) ?? d.locale
+        cleanup = try c.decodeIfPresent(CleanupConfig.self, forKey: .cleanup) ?? d.cleanup
+        output = try c.decodeIfPresent(OutputConfig.self, forKey: .output) ?? d.output
+        recordings = try c.decodeIfPresent(RecordingsConfig.self, forKey: .recordings) ?? d.recordings
+        accounts = try c.decodeIfPresent([APIAccount].self, forKey: .accounts) ?? d.accounts
+        bindings = try c.decodeIfPresent([InputBinding].self, forKey: .bindings) ?? []
+        gesture = try c.decodeIfPresent(GestureConfig.self, forKey: .gesture) ?? d.gesture
+        vocabulary = try c.decodeIfPresent([String].self, forKey: .vocabulary) ?? d.vocabulary
     }
 
     /// Adds vocabulary entries, skipping duplicates.
@@ -418,9 +504,16 @@ public struct TalkyConfig: Codable, Sendable, Equatable {
     /// Loads config, writing the default file on first run.
     public static func load() -> TalkyConfig {
         let url = fileURL
-        if let data = try? Data(contentsOf: url),
-           let config = try? JSONDecoder().decode(TalkyConfig.self, from: data) {
-            return config
+        if let data = try? Data(contentsOf: url) {
+            if var config = try? JSONDecoder().decode(TalkyConfig.self, from: data) {
+                if config.bindings.isEmpty, !config.hotkey.isEmpty {
+                    config.bindings = [.hotkey(config.hotkey)]
+                }
+                return config
+            }
+            // Undecodable file: keep it (back it up) rather than overwrite.
+            try? data.write(to: url.appendingPathExtension("broken.json"))
+            return TalkyConfig.default
         }
         let config = TalkyConfig.default
         try? config.save()

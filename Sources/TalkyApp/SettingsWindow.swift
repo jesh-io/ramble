@@ -76,10 +76,21 @@ private struct GeneralTab: View {
 
     var body: some View {
         Form {
-            Section("Dictation") {
-                TextField("Global hotkey", text: $store.config.hotkey)
-                Text("e.g. ctrl+alt+cmd+d · cmd+shift+space · f13 — applied immediately")
+            Section("Triggers") {
+                ForEach(store.config.bindings.indices, id: \.self) { i in
+                    BindingRow(binding: $store.config.bindings[i]) {
+                        store.config.bindings.remove(at: i)
+                    }
+                }
+                Menu("Add Trigger") {
+                    Button("Keyboard shortcut") { store.config.bindings.append(.hotkey("cmd+shift+space")) }
+                    Button("Mouse button (middle click)") { store.config.bindings.append(InputBinding(type: "mouse", button: 2)) }
+                    Button("Modifier key (double-tap right ⌘)") { store.config.bindings.append(InputBinding(type: "modifier", modifierKey: "rightcmd", taps: 2)) }
+                }
+                Text("Any number of triggers. Toggle = press to start, press to stop. Hold = record while held (push-to-talk). Mouse triggers can swallow the click so it doesn't reach other apps.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Dictation") {
                 TextField("Speech locale", text: $store.config.locale)
                 Picker("Live captions", selection: $store.config.output.captions) {
                     Text("Off — menu bar icon only").tag("off")
@@ -670,5 +681,96 @@ private struct StorageTab: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+
+/// Editor for one trigger binding.
+private struct BindingRow: View {
+    @Binding var binding: InputBinding
+    let onRemove: () -> Void
+
+    private let modifierKeys: [(String, String)] = [
+        ("cmd", "⌘ Command"), ("rightcmd", "Right ⌘"), ("alt", "⌥ Option"), ("rightalt", "Right ⌥"),
+        ("ctrl", "⌃ Control"), ("rightctrl", "Right ⌃"), ("shift", "⇧ Shift"), ("rightshift", "Right ⇧"),
+        ("fn", "fn / Globe"),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Picker("", selection: $binding.type) {
+                    Text("Keyboard shortcut").tag("hotkey")
+                    Text("Mouse button").tag("mouse")
+                    Text("Modifier key").tag("modifier")
+                }
+                .labelsHidden()
+                .frame(width: 170)
+                Spacer()
+                Picker("", selection: $binding.mode) {
+                    Text("Toggle").tag("toggle")
+                    Text("Hold to talk").tag("hold")
+                }
+                .labelsHidden()
+                .frame(width: 130)
+                Button(role: .destructive) { onRemove() } label: { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+            }
+            switch binding.type {
+            case "hotkey":
+                TextField("e.g. ctrl+alt+cmd+d · cmd+shift+space · f13", text: Binding(
+                    get: { binding.keys ?? "" }, set: { binding.keys = $0 }))
+                    .textFieldStyle(.roundedBorder)
+            case "mouse":
+                HStack(spacing: 10) {
+                    Picker("Button", selection: Binding(get: { binding.button ?? 2 }, set: { binding.button = $0 })) {
+                        Text("Middle (scroll-wheel click)").tag(2)
+                        ForEach(3..<8, id: \.self) { Text("Button \($0 + 1)").tag($0) }
+                    }
+                    .frame(width: 250)
+                    Picker("", selection: $binding.taps) {
+                        Text("Single click").tag(1)
+                        Text("Double click").tag(2)
+                    }
+                    .labelsHidden()
+                    .frame(width: 120)
+                }
+                HStack(spacing: 12) {
+                    ForEach([("cmd", "⌘"), ("alt", "⌥"), ("ctrl", "⌃"), ("shift", "⇧")], id: \.0) { key, glyph in
+                        Toggle(glyph, isOn: Binding(
+                            get: { binding.modifiers.contains(key) },
+                            set: { on in
+                                if on { if !binding.modifiers.contains(key) { binding.modifiers.append(key) } }
+                                else { binding.modifiers.removeAll { $0 == key } }
+                            }))
+                        .toggleStyle(.checkbox)
+                    }
+                    Spacer()
+                    Toggle("Swallow click", isOn: $binding.swallow)
+                        .toggleStyle(.checkbox)
+                }
+                .font(.callout)
+            default:
+                HStack(spacing: 10) {
+                    Picker("Key", selection: Binding(get: { binding.modifierKey ?? "rightcmd" }, set: { binding.modifierKey = $0 })) {
+                        ForEach(modifierKeys, id: \.0) { key, label in Text(label).tag(key) }
+                    }
+                    .frame(width: 220)
+                    if binding.mode != "hold" {
+                        Picker("", selection: $binding.taps) {
+                            Text("Double-tap").tag(2)
+                            Text("Single tap").tag(1)
+                        }
+                        .labelsHidden()
+                        .frame(width: 120)
+                    }
+                }
+                Text(binding.mode == "hold"
+                     ? "Hold the key ≥0.35 s to record; release to finish."
+                     : "Taps of the key alone (no other keys). fn double-tap may collide with macOS Dictation — disable it in Keyboard settings.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
