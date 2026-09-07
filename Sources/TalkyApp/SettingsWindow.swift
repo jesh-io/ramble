@@ -112,6 +112,26 @@ private struct GeneralTab: View {
                 Toggle("Paste into the frontmost app", isOn: $store.config.output.paste)
                 Toggle("Restore previous clipboard after pasting", isOn: $store.config.output.restoreClipboard)
                 Toggle("Start/stop sounds", isOn: $store.config.output.sounds)
+                Picker("Sound theme", selection: $store.config.output.soundTheme) {
+                    ForEach(Chime.Theme.allCases, id: \.rawValue) { theme in
+                        Text(theme.label).tag(theme.rawValue)
+                    }
+                }
+                .disabled(!store.config.output.sounds)
+                HStack {
+                    Text("Volume")
+                    Slider(value: $store.config.output.soundVolume, in: 0...1)
+                        .frame(maxWidth: 200)
+                    Spacer()
+                    ForEach([("Start", Chime.Kind.start), ("Stop", .stop), ("Done", .done)], id: \.0) { label, kind in
+                        Button(label) {
+                            let theme = Chime.Theme(rawValue: store.config.output.soundTheme) ?? .tap
+                            Chime.shared.play(kind, theme: theme, volume: store.config.output.soundVolume)
+                        }
+                        .controlSize(.small)
+                    }
+                }
+                .disabled(!store.config.output.sounds)
                 Toggle("Press Return after every paste", isOn: $store.config.output.autoEnter)
                 Picker("Send key", selection: $store.config.output.sendKey) {
                     Text("Return").tag("return")

@@ -379,14 +379,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private enum ChimeKind { case start, stop, done }
-    private func playSound(_ kind: ChimeKind) {
+    private func playSound(_ kind: Chime.Kind) {
         guard config.output.sounds else { return }
-        switch kind {
-        case .start: Chime.shared.start()
-        case .stop: Chime.shared.stop()
-        case .done: Chime.shared.done()
-        }
+        let theme = Chime.Theme(rawValue: config.output.soundTheme) ?? .tap
+        Chime.shared.play(kind, theme: theme, volume: config.output.soundVolume)
     }
 
     // MARK: - Menu actions

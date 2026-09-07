@@ -189,19 +189,26 @@ public struct OutputConfig: Codable, Sendable, Equatable {
     public var autoEnter: Bool
     /// Key used to "send": "return" or "cmd-return" (Mail, some chat apps).
     public var sendKey: String
+    /// Sound theme: "tap", "knock", "click", "chime", or "system".
+    public var soundTheme: String
+    /// Sound volume 0…1.
+    public var soundVolume: Double
 
     public static let `default` = OutputConfig(
         paste: true, restoreClipboard: true, sounds: true, captions: "minimal",
-        autoEnter: false, sendKey: "return")
+        autoEnter: false, sendKey: "return", soundTheme: "tap", soundVolume: 0.6)
 
     public init(paste: Bool, restoreClipboard: Bool, sounds: Bool, captions: String = "minimal",
-                autoEnter: Bool = false, sendKey: String = "return") {
+                autoEnter: Bool = false, sendKey: String = "return",
+                soundTheme: String = "tap", soundVolume: Double = 0.6) {
         self.paste = paste
         self.restoreClipboard = restoreClipboard
         self.sounds = sounds
         self.captions = captions
         self.autoEnter = autoEnter
         self.sendKey = sendKey
+        self.soundTheme = soundTheme
+        self.soundVolume = soundVolume
     }
 
     public init(from decoder: Decoder) throws {
@@ -213,6 +220,8 @@ public struct OutputConfig: Codable, Sendable, Equatable {
         captions = try c.decodeIfPresent(String.self, forKey: .captions) ?? d.captions
         autoEnter = try c.decodeIfPresent(Bool.self, forKey: .autoEnter) ?? d.autoEnter
         sendKey = try c.decodeIfPresent(String.self, forKey: .sendKey) ?? d.sendKey
+        soundTheme = try c.decodeIfPresent(String.self, forKey: .soundTheme) ?? d.soundTheme
+        soundVolume = try c.decodeIfPresent(Double.self, forKey: .soundVolume) ?? d.soundVolume
     }
 }
 
