@@ -23,22 +23,22 @@ final class Chime {
     private init() {
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: format)
-        engine.mainMixerNode.outputVolume = 0.45
+        engine.mainMixerNode.outputVolume = 0.6
     }
 
-    /// Recording started: two quick clicks, second a touch higher (tk-TK).
+    /// Recording started: knock-knock, second a touch higher.
     func start() {
-        play([Hit(freq: 1150, tau: 0.008), Hit(freq: 1450, tau: 0.008)])
+        play([Hit(freq: 185, sweep: 0.72, tau: 0.032, noise: 0.28, gap: 0.12), Hit(freq: 215, sweep: 0.72, tau: 0.032, noise: 0.28)])
     }
 
-    /// Recording stopped: the reverse (TK-tk).
+    /// Recording stopped: the reverse.
     func stop() {
-        play([Hit(freq: 1450, tau: 0.008), Hit(freq: 1150, tau: 0.008)])
+        play([Hit(freq: 215, sweep: 0.72, tau: 0.032, noise: 0.28, gap: 0.12), Hit(freq: 185, sweep: 0.72, tau: 0.032, noise: 0.28)])
     }
 
-    /// Text delivered: one softer, rounder pop with a downward sweep.
+    /// Text delivered: one soft knock.
     func done() {
-        play([Hit(freq: 750, sweep: 0.5, tau: 0.016, noise: 0.12, gain: 0.7)])
+        play([Hit(freq: 170, sweep: 0.7, tau: 0.036, noise: 0.18, gain: 0.75)])
     }
 
     private func play(_ hits: [Hit]) {
@@ -63,7 +63,7 @@ final class Chime {
         var rng = SystemRandomNumberGenerator()
         for hit in hits {
             let startFrame = Int(cursor * sr)
-            let n = Int(min(0.06, hit.tau * 7) * sr)
+            let n = Int(min(0.25, hit.tau * 7) * sr)
             var phase = 0.0
             for i in 0..<n where startFrame + i < Int(frames) {
                 let t = Double(i) / sr
@@ -71,7 +71,7 @@ final class Chime {
                 // pitch glides from freq toward freq*sweep over the decay
                 let f = hit.freq * (hit.sweep + (1 - hit.sweep) * exp(-t / (hit.tau * 1.5)))
                 phase += 2 * .pi * f / sr
-                let tone = sin(phase)
+                let tone = sin(phase) + 0.35 * sin(phase * 2.41) * exp(-t / (hit.tau * 0.6))
                 let noise = (Double.random(in: -1...1, using: &rng)) * hit.noise * exp(-t / 0.0015)
                 out[startFrame + i] += Float((tone * env + noise) * 0.7 * hit.gain)
             }
