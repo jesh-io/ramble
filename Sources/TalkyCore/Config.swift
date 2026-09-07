@@ -144,15 +144,23 @@ public struct OutputConfig: Codable, Sendable, Equatable {
     /// Live caption pill while recording: "minimal" (dot + elapsed time),
     /// "full" (streaming text), or "off" (menu bar icon only).
     public var captions: String
+    /// Press Return after every paste (send the message / submit the form).
+    public var autoEnter: Bool
+    /// Key used to "send": "return" or "cmd-return" (Mail, some chat apps).
+    public var sendKey: String
 
     public static let `default` = OutputConfig(
-        paste: true, restoreClipboard: true, sounds: true, captions: "minimal")
+        paste: true, restoreClipboard: true, sounds: true, captions: "minimal",
+        autoEnter: false, sendKey: "return")
 
-    public init(paste: Bool, restoreClipboard: Bool, sounds: Bool, captions: String = "minimal") {
+    public init(paste: Bool, restoreClipboard: Bool, sounds: Bool, captions: String = "minimal",
+                autoEnter: Bool = false, sendKey: String = "return") {
         self.paste = paste
         self.restoreClipboard = restoreClipboard
         self.sounds = sounds
         self.captions = captions
+        self.autoEnter = autoEnter
+        self.sendKey = sendKey
     }
 
     public init(from decoder: Decoder) throws {
@@ -162,6 +170,8 @@ public struct OutputConfig: Codable, Sendable, Equatable {
         restoreClipboard = try c.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? d.restoreClipboard
         sounds = try c.decodeIfPresent(Bool.self, forKey: .sounds) ?? d.sounds
         captions = try c.decodeIfPresent(String.self, forKey: .captions) ?? d.captions
+        autoEnter = try c.decodeIfPresent(Bool.self, forKey: .autoEnter) ?? d.autoEnter
+        sendKey = try c.decodeIfPresent(String.self, forKey: .sendKey) ?? d.sendKey
     }
 }
 
@@ -216,13 +226,18 @@ public struct GestureConfig: Codable, Sendable, Equatable {
     public var fingers: Int
     /// Consecutive taps required (1–3). Default: double tap.
     public var taps: Int
+    /// Extra taps send Return: one tap beyond the gesture count while
+    /// finishing (e.g. triple tap) presses Return after the paste, and a
+    /// lone tap within 10 s of a paste presses Return immediately.
+    public var tapToEnter: Bool
 
-    public static let `default` = GestureConfig(enabled: false, fingers: 3, taps: 2)
+    public static let `default` = GestureConfig(enabled: false, fingers: 3, taps: 2, tapToEnter: true)
 
-    public init(enabled: Bool, fingers: Int, taps: Int) {
+    public init(enabled: Bool, fingers: Int, taps: Int, tapToEnter: Bool = true) {
         self.enabled = enabled
         self.fingers = fingers
         self.taps = taps
+        self.tapToEnter = tapToEnter
     }
 
     public init(from decoder: Decoder) throws {
@@ -231,6 +246,7 @@ public struct GestureConfig: Codable, Sendable, Equatable {
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? d.enabled
         fingers = try c.decodeIfPresent(Int.self, forKey: .fingers) ?? d.fingers
         taps = try c.decodeIfPresent(Int.self, forKey: .taps) ?? d.taps
+        tapToEnter = try c.decodeIfPresent(Bool.self, forKey: .tapToEnter) ?? d.tapToEnter
     }
 }
 

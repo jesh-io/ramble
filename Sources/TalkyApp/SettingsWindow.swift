@@ -102,6 +102,8 @@ private struct GeneralTab: View {
                     Text("Triple tap").tag(3)
                 }
                 .disabled(!store.config.gesture.enabled)
+                Toggle("Extra tap sends — triple-tap to finish, or one tap within 10 s of a paste", isOn: $store.config.gesture.tapToEnter)
+                    .disabled(!store.config.gesture.enabled)
                 Text("3-finger double tap is a safe default (3-finger single tap collides with the system's Look Up; 3/4-finger swipes belong to Mission Control). If a BetterTouchTool gesture already triggers the hotkey, enable only one or every tap will double-toggle.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -110,6 +112,11 @@ private struct GeneralTab: View {
                 Toggle("Paste into the frontmost app", isOn: $store.config.output.paste)
                 Toggle("Restore previous clipboard after pasting", isOn: $store.config.output.restoreClipboard)
                 Toggle("Start/stop sounds", isOn: $store.config.output.sounds)
+                Toggle("Press Return after every paste", isOn: $store.config.output.autoEnter)
+                Picker("Send key", selection: $store.config.output.sendKey) {
+                    Text("Return").tag("return")
+                    Text("⌘ Return").tag("cmd-return")
+                }
             }
         }
         .formStyle(.grouped)

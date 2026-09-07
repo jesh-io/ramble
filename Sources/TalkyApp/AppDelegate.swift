@@ -23,6 +23,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var gestureRecognizer: GestureRecognizer?
     #endif
 
+    // "Send" flow: an extra tap queues Return for the upcoming paste; a
+    // lone tap shortly after a paste presses Return immediately.
+    private var sendPending = false
+    private var lastPasteAt: Date?
+    private let sendWindow: TimeInterval = 10
+    private var commandReturn: Bool { config.output.sendKey == "cmd-return" }
+
     private var captions: String { config.output.captions }
 
     // MARK: - Lifecycle
@@ -62,9 +69,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recognizer.onGesture = { [weak self] in
             Task { @MainActor in self?.toggle() }
         }
+        recognizer.onTapSequence = { [weak self] count in
+            Task { @MainActor in self?.handleTapSequence(count) }
+        }
         recognizer.start()
         gestureRecognizer = recognizer
         #endif
+    }
+
+    /// Extra/lone taps mean "send": while cleanup runs, arm Return for the
+    /// paste; within the window after a paste, press it now.
+    private func handleTapSequence(_ count: Int) {
+        guard config.gesture.tapToEnter, count != config.gesture.taps else { return }
+        if session?.state == .processing {
+            sendPending = true
+            if captions != "off" {
+                panel.showProcessing(message: "Cleaning up… will send ↩")
+            }
+        } else if let pasted = lastPasteAt, Date().timeIntervalSince(pasted) <= sendWindow {
+            lastPasteAt = nil
+            Paster.sendReturn(command: commandReturn)
+            if captions != "off" {
+                panel.setStatus("✓", message: "Sent ↩")
+                hidePanelSoon(after: 1)
+            }
+        }
     }
 
     private func registerHotkey() {
@@ -216,6 +245,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard session == nil || session?.state == .idle, !busy else { return }
         busy = true
 
+        sendPending = false
+        lastPasteAt = nil
         let session = DictationSession(config: config)
         self.session = session
         session.onEvent = { [weak self] event in
@@ -300,13 +331,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             if config.output.paste {
-                let pasted = Paster.deliver(text, restoreClipboard: config.output.restoreClipboard)
-                panel.setStatus("✓", message: pasted ? snippet(text) : "Copied — grant Accessibility for auto-paste")
+                let sendNow = config.output.autoEnter || sendPending
+                sendPending = false
+                let pasted = Paster.deliver(
+                    text, restoreClipboard: config.output.restoreClipboard,
+                    thenReturn: sendNow, commandReturn: commandReturn)
+                if pasted {
+                    lastPasteAt = Date()
+                    let offerSend = config.gesture.enabled && config.gesture.tapToEnter && !sendNow
+                    panel.setStatus("✓", message: sendNow ? "Sent ↩" : offerSend ? "↩ tap to send" : snippet(text))
+                    hidePanelSoon(after: offerSend ? sendWindow : 1.5)
+                } else {
+                    panel.setStatus("✓", message: "Copied — grant Accessibility for auto-paste")
+                    hidePanelSoon(after: 1.5)
+                }
             } else {
                 Paster.deliver(text, restoreClipboard: false)
                 panel.setStatus("✓", message: "Copied: " + snippet(text))
+                hidePanelSoon(after: 1.5)
             }
-            hidePanelSoon(after: 1.5)
 
         case .error(let message):
             NSLog("Talky: \(message)")

@@ -17,7 +17,7 @@ enum Paster {
 
     /// Returns true if the text was pasted, false if only copied.
     @discardableResult
-    static func deliver(_ text: String, restoreClipboard: Bool) -> Bool {
+    static func deliver(_ text: String, restoreClipboard: Bool, thenReturn: Bool = false, commandReturn: Bool = false) -> Bool {
         let pasteboard = NSPasteboard.general
         let previous = restoreClipboard ? pasteboard.string(forType: .string) : nil
 
@@ -29,6 +29,9 @@ enum Paster {
         // Small delay so the pasteboard write settles before ⌘V lands.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             sendCmdV()
+            if thenReturn {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { sendReturn(command: commandReturn) }
+            }
             if let previous {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                     let pb = NSPasteboard.general
@@ -42,6 +45,23 @@ enum Paster {
             }
         }
         return true
+    }
+
+    /// Presses Return in the frontmost app (needs Accessibility).
+    static func sendReturn(command: Bool = false) {
+        guard canPaste else { return }
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let key = CGKeyCode(kVK_Return)
+        guard
+            let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),
+            let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
+        else { return }
+        if command {
+            down.flags = .maskCommand
+            up.flags = .maskCommand
+        }
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
     }
 
     private static func sendCmdV() {

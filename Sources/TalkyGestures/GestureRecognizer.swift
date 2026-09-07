@@ -10,7 +10,12 @@ import TalkyCore
 /// quick succession. The default matches the classic BetterTouchTool
 /// setup: 3-finger double tap.
 public final class GestureRecognizer: @unchecked Sendable {
+    /// Fires immediately when the configured tap count is reached.
     public var onGesture: (@Sendable () -> Void)?
+    /// Fires once a tap sequence ends (no further tap within the gap) with
+    /// the total count — e.g. 1 for a lone tap, 3 for a triple. Lets the app
+    /// give extra/single taps meaning without slowing the main gesture.
+    public var onTapSequence: (@Sendable (Int) -> Void)?
 
     private let fingers: Int
     private let taps: Int
@@ -31,6 +36,7 @@ public final class GestureRecognizer: @unchecked Sendable {
     private var drifted = false
     private var tapCount = 0
     private var lastTapEnd: Date?
+    private var sequenceTimer: DispatchWorkItem?
 
     public init(fingers: Int = 3, taps: Int = 2) {
         self.fingers = max(1, min(fingers, 5))
@@ -129,13 +135,23 @@ public final class GestureRecognizer: @unchecked Sendable {
         if debug {
             NSLog("Talky gesture: tap %d/%d", tapCount, taps)
         }
-        if tapCount >= taps {
-            tapCount = 0
-            lastTapEnd = nil
-            if let onGesture {
-                DispatchQueue.main.async { onGesture() }
+        if tapCount == taps, let onGesture {
+            DispatchQueue.main.async { onGesture() }
+        }
+
+        // Report the final count once the sequence goes quiet.
+        sequenceTimer?.cancel()
+        let count = tapCount
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.tapCount = 0
+            self.lastTapEnd = nil
+            if let onTapSequence = self.onTapSequence {
+                DispatchQueue.main.async { onTapSequence(count) }
             }
         }
+        sequenceTimer = work
+        DispatchQueue.global().asyncAfter(deadline: .now() + interTapGap, execute: work)
     }
 
     private func centroid(_ touches: [OMSTouchData]) -> (x: Float, y: Float) {
