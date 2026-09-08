@@ -11,6 +11,23 @@ public enum TalkyKit {
         AppleTranscriber(locale: Locale(identifier: config.locale), vocabulary: config.vocabulary)
     }
 
+    /// The configured speech engine (Apple on-device or a remote plugin).
+    /// Falls back to Apple if the chosen engine isn't available.
+    public static func makeTranscriber(config: TalkyConfig, mode: String? = nil) -> Transcriber {
+        STTPlugins.registerAll()
+        let provider = ProviderRegistry.activeSTTProvider(config)
+        let options = STTOptions(
+            locale: Locale(identifier: config.locale),
+            vocabulary: config.vocabulary.map { $0.components(separatedBy: "(")[0].components(separatedBy: " —")[0].trimmingCharacters(in: .whitespaces) },
+            mode: mode ?? config.stt.mode,
+            diarize: config.stt.diarize)
+        do {
+            return try TranscriberFactory.make(provider: provider, options: options)
+        } catch {
+            return makeDefaultTranscriber(config: config)
+        }
+    }
+
     /// Cleans text with the active cleanup provider from config.
     public static func cleanText(_ text: String, config: TalkyConfig) async throws -> String {
         guard let provider = ProviderRegistry.activeCleanupProvider(config) else {

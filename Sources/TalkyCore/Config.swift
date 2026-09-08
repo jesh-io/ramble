@@ -46,6 +46,73 @@ public struct CleanupProvider: Codable, Sendable, Equatable {
     }
 }
 
+/// A resolved speech-to-text engine choice (built-in Apple, or a remote
+/// account/model). Produced by the provider registry; consumed by
+/// `TranscriberFactory`.
+public struct STTProvider: Sendable, Equatable {
+    public var id: String              // "apple" or "<account>/<model>"
+    public var engine: String          // "apple", "elevenlabs", "assemblyai", "deepgram", "openai", "mistral", "groq"
+    public var baseURL: String
+    public var model: String
+    public var apiKeyEnv: String?
+    public var apiKey: String?
+    public var supportsStreaming: Bool
+    public var supportsDiarization: Bool
+    /// USD per minute of audio (nil = free/local).
+    public var costPerMinute: Double?
+
+    public init(id: String, engine: String, baseURL: String, model: String, apiKeyEnv: String? = nil,
+                apiKey: String? = nil, supportsStreaming: Bool, supportsDiarization: Bool = false,
+                costPerMinute: Double? = nil) {
+        self.id = id
+        self.engine = engine
+        self.baseURL = baseURL
+        self.model = model
+        self.apiKeyEnv = apiKeyEnv
+        self.apiKey = apiKey
+        self.supportsStreaming = supportsStreaming
+        self.supportsDiarization = supportsDiarization
+        self.costPerMinute = costPerMinute
+    }
+
+    public var resolvedAPIKey: String? {
+        if let apiKey, !apiKey.isEmpty { return apiKey }
+        if let apiKeyEnv, let v = ProcessInfo.processInfo.environment[apiKeyEnv], !v.isEmpty { return v }
+        return nil
+    }
+
+    public static let apple = STTProvider(
+        id: "apple", engine: "apple", baseURL: "on-device", model: "SpeechAnalyzer",
+        supportsStreaming: true, supportsDiarization: false)
+}
+
+/// Speech-to-text selection.
+public struct STTConfig: Codable, Sendable, Equatable {
+    /// "apple" or an account-derived id like "assemblyai/universal".
+    public var provider: String
+    /// "auto" (stream when the engine can, else batch at stop),
+    /// "streaming", or "batch" (record, then send the whole file at stop).
+    public var mode: String
+    /// Ask diarization-capable engines for speaker labels (file transcription).
+    public var diarize: Bool
+
+    public static let `default` = STTConfig(provider: "apple", mode: "auto", diarize: false)
+
+    public init(provider: String, mode: String = "auto", diarize: Bool = false) {
+        self.provider = provider
+        self.mode = mode
+        self.diarize = diarize
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = Self.default
+        provider = try c.decodeIfPresent(String.self, forKey: .provider) ?? d.provider
+        mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? d.mode
+        diarize = try c.decodeIfPresent(Bool.self, forKey: .diarize) ?? d.diarize
+    }
+}
+
 public struct CleanupConfig: Codable, Sendable, Equatable {
     public var enabled: Bool
     /// id of the active entry in `providers`.
@@ -392,6 +459,8 @@ public struct TalkyConfig: Codable, Sendable, Equatable {
     public var hotkey: String
     /// Speech recognition locale, e.g. "en-US".
     public var locale: String
+    /// Speech-to-text engine selection.
+    public var stt: STTConfig
     public var cleanup: CleanupConfig
     public var output: OutputConfig
     public var recordings: RecordingsConfig
@@ -410,6 +479,7 @@ public struct TalkyConfig: Codable, Sendable, Equatable {
     public static let `default` = TalkyConfig(
         hotkey: "ctrl+alt+cmd+d",
         locale: "en-US",
+        stt: .default,
         cleanup: .default,
         output: .default,
         recordings: .default,
@@ -419,12 +489,13 @@ public struct TalkyConfig: Codable, Sendable, Equatable {
         vocabulary: []
     )
 
-    public init(hotkey: String, locale: String, cleanup: CleanupConfig, output: OutputConfig,
-                recordings: RecordingsConfig = .default, accounts: [APIAccount] = [],
+    public init(hotkey: String, locale: String, stt: STTConfig = .default, cleanup: CleanupConfig,
+                output: OutputConfig, recordings: RecordingsConfig = .default, accounts: [APIAccount] = [],
                 bindings: [InputBinding] = [], gesture: GestureConfig = .default,
                 vocabulary: [String] = []) {
         self.hotkey = hotkey
         self.locale = locale
+        self.stt = stt
         self.cleanup = cleanup
         self.output = output
         self.recordings = recordings
@@ -441,6 +512,7 @@ public struct TalkyConfig: Codable, Sendable, Equatable {
         let d = Self.default
         hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey) ?? d.hotkey
         locale = try c.decodeIfPresent(String.self, forKey: .locale) ?? d.locale
+        stt = try c.decodeIfPresent(STTConfig.self, forKey: .stt) ?? d.stt
         cleanup = try c.decodeIfPresent(CleanupConfig.self, forKey: .cleanup) ?? d.cleanup
         output = try c.decodeIfPresent(OutputConfig.self, forKey: .output) ?? d.output
         recordings = try c.decodeIfPresent(RecordingsConfig.self, forKey: .recordings) ?? d.recordings

@@ -45,9 +45,13 @@ struct UsageTab: View {
 
     private var points: [Point] {
         let providers = ProviderRegistry.allCleanupProviders(store.config)
+        let sttProviders = ProviderRegistry.sttProviders(store.config)
         func rate(_ model: String) -> (Double, Double) {
             guard let p = providers.first(where: { $0.model == model }) else { return (0, 0) }
             return (p.inputCostPerMTok ?? 0, p.outputCostPerMTok ?? 0)
+        }
+        func minuteRate(_ model: String) -> Double {
+            sttProviders.first { $0.id == model }?.costPerMinute ?? 0
         }
         let cutoff = Calendar.current.date(byAdding: .day, value: -13, to: Calendar.current.startOfDay(for: Date()))!
         var agg: [String: (minutes: Double, tokensIn: Int, tokensOut: Int)] = [:]
@@ -68,7 +72,7 @@ struct UsageTab: View {
             return Point(
                 day: day, model: model, minutes: a.minutes,
                 tokens: a.tokensIn + a.tokensOut,
-                cost: Double(a.tokensIn) / 1e6 * rIn + Double(a.tokensOut) / 1e6 * rOut)
+                cost: Double(a.tokensIn) / 1e6 * rIn + Double(a.tokensOut) / 1e6 * rOut + a.minutes * minuteRate(model))
         }
     }
 

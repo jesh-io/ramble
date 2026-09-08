@@ -57,8 +57,7 @@ public final class DictationSession: @unchecked Sendable {
 
     public init(config: TalkyConfig, transcriber: Transcriber? = nil) {
         self.config = config
-        self.transcriber = transcriber
-            ?? AppleTranscriber(locale: Locale(identifier: config.locale), vocabulary: config.vocabulary)
+        self.transcriber = transcriber ?? TalkyKit.makeTranscriber(config: config)
     }
 
     private func emit(_ event: Event) {
@@ -171,7 +170,8 @@ public final class DictationSession: @unchecked Sendable {
         }
         if let start = recordStartDate {
             UsageLog.record(
-                kind: "stt", provider: transcriber.id, model: "SpeechAnalyzer/\(config.locale)",
+                kind: "stt", provider: transcriber.id,
+                model: transcriber.id == "apple" ? "SpeechAnalyzer/\(config.locale)" : transcriber.id,
                 seconds: Date().timeIntervalSince(start))
             recordStartDate = nil
         }

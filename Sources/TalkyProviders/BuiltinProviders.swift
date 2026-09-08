@@ -85,18 +85,53 @@ enum BuiltinProviders {
             keyEnvSuggestion: "XAI_API_KEY",
             models: [ModelInfo("grok-4-fast", input: 0.2, output: 0.5)]),
 
-        // MARK: Remote — speech-to-text (catalogued; engines land with the
-        // remote-STT phase. Per-second billing is already supported by the
-        // usage ledger.)
+        // MARK: Remote — speech-to-text (engines live in TalkyTranscribeRemote)
         ProviderPlugin(
-            id: "assemblyai", name: "AssemblyAI", kind: .stt, engine: "stt-remote",
+            id: "elevenlabs", name: "ElevenLabs", kind: .stt, engine: "elevenlabs",
+            defaultBaseURL: "https://api.elevenlabs.io", apiKeyRequired: true,
+            keyEnvSuggestion: "ELEVENLABS_API_KEY",
+            models: [
+                ModelInfo("scribe_v2_realtime", note: "150 ms streaming", costPerMinute: 0.0067, streaming: true),
+                ModelInfo("scribe_v2", note: "batch, diarization", costPerMinute: 0.0067, diarization: true),
+            ]),
+        ProviderPlugin(
+            id: "assemblyai", name: "AssemblyAI", kind: .stt, engine: "assemblyai",
             defaultBaseURL: "https://api.assemblyai.com", apiKeyRequired: true,
             keyEnvSuggestion: "ASSEMBLYAI_API_KEY",
-            models: [ModelInfo("universal", note: "incl. diarization")], available: false),
+            models: [
+                ModelInfo("universal-streaming", note: "streaming ($0.15/hr session)", costPerMinute: 0.0025, streaming: true),
+                ModelInfo("universal", note: "batch, diarization", costPerMinute: 0.0045, diarization: true),
+            ]),
         ProviderPlugin(
-            id: "deepgram", name: "Deepgram", kind: .stt, engine: "stt-remote",
+            id: "deepgram", name: "Deepgram", kind: .stt, engine: "deepgram",
             defaultBaseURL: "https://api.deepgram.com", apiKeyRequired: true,
             keyEnvSuggestion: "DEEPGRAM_API_KEY",
-            models: [ModelInfo("nova-3", note: "incl. diarization")], available: false),
+            models: [
+                ModelInfo("nova-3", note: "streaming + batch, diarization", costPerMinute: 0.0077, streaming: true, diarization: true),
+            ]),
+        ProviderPlugin(
+            id: "openai-stt", name: "OpenAI Transcribe", kind: .stt, engine: "openai",
+            defaultBaseURL: "https://api.openai.com/v1", apiKeyRequired: true,
+            keyEnvSuggestion: "OPENAI_API_KEY",
+            models: [
+                ModelInfo("gpt-4o-transcribe", note: "batch + realtime", costPerMinute: 0.006, streaming: true),
+                ModelInfo("gpt-4o-mini-transcribe", note: "batch + realtime, cheaper", costPerMinute: 0.003, streaming: true),
+                ModelInfo("whisper-1", note: "batch", costPerMinute: 0.006),
+            ]),
+        ProviderPlugin(
+            id: "mistral-stt", name: "Mistral Voxtral", kind: .stt, engine: "mistral",
+            defaultBaseURL: "https://api.mistral.ai/v1", apiKeyRequired: true,
+            keyEnvSuggestion: "MISTRAL_API_KEY",
+            models: [
+                ModelInfo("voxtral-mini-transcribe-2", note: "batch + realtime, cheapest", costPerMinute: 0.003, streaming: true),
+            ]),
+        ProviderPlugin(
+            id: "groq-stt", name: "Groq Whisper", kind: .stt, engine: "groq",
+            defaultBaseURL: "https://api.groq.com/openai/v1", apiKeyRequired: true,
+            keyEnvSuggestion: "GROQ_API_KEY",
+            models: [
+                ModelInfo("whisper-large-v3-turbo", note: "batch, very fast", costPerMinute: 0.00067),
+                ModelInfo("whisper-large-v3", note: "batch", costPerMinute: 0.00185),
+            ]),
     ]
 }

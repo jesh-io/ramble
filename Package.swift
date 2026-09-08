@@ -16,6 +16,12 @@ let package = Package(
         .library(name: "TalkyCore", targets: ["TalkyCore"]),
         .library(name: "TalkyAudio", targets: ["TalkyAudio"]),
         .library(name: "TalkyTranscribe", targets: ["TalkyTranscribe"]),
+        .library(name: "TalkySTTElevenLabs", targets: ["TalkySTTElevenLabs"]),
+        .library(name: "TalkySTTAssemblyAI", targets: ["TalkySTTAssemblyAI"]),
+        .library(name: "TalkySTTDeepgram", targets: ["TalkySTTDeepgram"]),
+        .library(name: "TalkySTTOpenAI", targets: ["TalkySTTOpenAI"]),
+        .library(name: "TalkySTTMistral", targets: ["TalkySTTMistral"]),
+        .library(name: "TalkySTTGroq", targets: ["TalkySTTGroq"]),
         .library(name: "TalkyClean", targets: ["TalkyClean"]),
         .library(name: "TalkyProviders", targets: ["TalkyProviders"]),
         .library(name: "TalkyGestures", targets: ["TalkyGestures"]),
@@ -29,6 +35,14 @@ let package = Package(
         .target(name: "TalkyCore", swiftSettings: swiftSettings),
         .target(name: "TalkyAudio", dependencies: ["TalkyCore"], swiftSettings: swiftSettings),
         .target(name: "TalkyTranscribe", dependencies: ["TalkyCore"], swiftSettings: swiftSettings),
+        // Speech-to-text plugins: each is optional — remove one from TalkyKit's
+        // dependencies below to build without it (TalkyKit gates on canImport).
+        .target(name: "TalkySTTElevenLabs", dependencies: ["TalkyCore", "TalkyTranscribe"], swiftSettings: swiftSettings),
+        .target(name: "TalkySTTAssemblyAI", dependencies: ["TalkyCore", "TalkyTranscribe"], swiftSettings: swiftSettings),
+        .target(name: "TalkySTTDeepgram", dependencies: ["TalkyCore", "TalkyTranscribe"], swiftSettings: swiftSettings),
+        .target(name: "TalkySTTOpenAI", dependencies: ["TalkyCore", "TalkyTranscribe"], swiftSettings: swiftSettings),
+        .target(name: "TalkySTTMistral", dependencies: ["TalkyCore", "TalkyTranscribe"], swiftSettings: swiftSettings),
+        .target(name: "TalkySTTGroq", dependencies: ["TalkyCore", "TalkyTranscribe"], swiftSettings: swiftSettings),
         .target(name: "TalkyClean", dependencies: ["TalkyCore"], swiftSettings: swiftSettings),
         .target(name: "TalkyProviders", dependencies: ["TalkyCore"], swiftSettings: swiftSettings),
         .target(
@@ -41,7 +55,10 @@ let package = Package(
         ),
         .target(
             name: "TalkyKit",
-            dependencies: ["TalkyCore", "TalkyAudio", "TalkyTranscribe", "TalkyClean", "TalkyProviders"],
+            dependencies: [
+                "TalkyCore", "TalkyAudio", "TalkyTranscribe", "TalkyClean", "TalkyProviders",
+                "TalkySTTElevenLabs", "TalkySTTAssemblyAI", "TalkySTTDeepgram", "TalkySTTOpenAI", "TalkySTTMistral", "TalkySTTGroq",
+            ],
             swiftSettings: swiftSettings
         ),
         .executableTarget(name: "TalkyCLI", dependencies: ["TalkyKit", "TalkyProviders"], swiftSettings: swiftSettings),

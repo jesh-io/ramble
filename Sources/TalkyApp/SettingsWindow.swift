@@ -1,6 +1,7 @@
 import SwiftUI
 import TalkyCore
 import TalkyProviders
+import TalkyKit
 
 /// Observable wrapper around TalkyConfig: every mutation persists to disk
 /// and notifies the app so hotkey/menu/state stay current.
@@ -88,6 +89,22 @@ private struct GeneralTab: View {
                     Button("Modifier key (double-tap right ⌘)") { store.config.bindings.append(InputBinding(type: "modifier", modifierKey: "rightcmd", taps: 2)) }
                 }
                 Text("Any number of triggers. Toggle = press to start, press to stop. Hold = record while held (push-to-talk). Mouse triggers can swallow the click so it doesn't reach other apps.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Speech Recognition") {
+                Picker("Engine", selection: $store.config.stt.provider) {
+                    ForEach(STTPlugins.availableProviders(store.config), id: \.id) { p in
+                        Text(p.id == "apple" ? "Apple on-device (private, free)" : "\(p.id)  —  \(p.supportsStreaming ? "streaming" : "batch")\(p.supportsDiarization ? ", diarization" : "")")
+                            .tag(p.id)
+                    }
+                }
+                Picker("Mode", selection: $store.config.stt.mode) {
+                    Text("Auto — stream when the engine can").tag("auto")
+                    Text("Streaming — live text while you talk").tag("streaming")
+                    Text("Batch — send the recording at stop").tag("batch")
+                }
+                Toggle("Speaker labels for file transcription (diarization-capable engines)", isOn: $store.config.stt.diarize)
+                Text("Remote engines send audio to the provider. Add keys under Accounts (ElevenLabs, AssemblyAI, Deepgram, OpenAI, Mistral, Groq).")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Dictation") {

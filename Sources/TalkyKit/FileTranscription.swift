@@ -27,8 +27,7 @@ public enum FileTranscription {
         transcriber: Transcriber? = nil,
         onSegment: (@Sendable (TranscriptSegment) -> Void)? = nil
     ) async throws -> Result {
-        let engine = transcriber
-            ?? AppleTranscriber(locale: Locale(identifier: config.locale), vocabulary: config.vocabulary)
+        let engine = transcriber ?? TalkyKit.makeTranscriber(config: config, mode: "batch")
         let extracted = try await MediaAudio.audioFile(for: url)
         defer { extracted.cleanUp() }
 
@@ -36,7 +35,7 @@ public enum FileTranscription {
 
         if let audio = try? AVAudioFile(forReading: extracted.url), audio.fileFormat.sampleRate > 0 {
             UsageLog.record(
-                kind: "stt", provider: engine.id, model: "SpeechAnalyzer/file",
+                kind: "stt", provider: engine.id, model: engine.id == "apple" ? "SpeechAnalyzer/file" : engine.id,
                 seconds: Double(audio.length) / audio.fileFormat.sampleRate)
         }
 

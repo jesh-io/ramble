@@ -19,8 +19,9 @@ USAGE:
   talky vocab                                    List vocabulary entries
   talky eval [provider-id]                       Score cleanup against your corrected dictations
   talky usage                                    Usage & cost per day per model
-  talky models                                   List cleanup model providers
+  talky models                                   List cleanup + speech providers
   talky use <provider-id>                        Set the active cleanup provider
+  talky use --stt <provider-id> [--mode auto|streaming|batch]   Set the speech engine
   talky download                                 Pre-download the on-device speech model
   talky config                                   Print the config file path
 
@@ -28,6 +29,7 @@ FILE OPTIONS:
   --raw    Skip LLM cleanup, print the raw transcript
   --json   Print segments as JSON (timestamps, future speaker labels)
   --copy   Also copy the result to the clipboard
+  --stt <id>  Use a specific speech engine for this file (see `talky models`)
 
 Config: ~/.config/talky/config.json
 """
@@ -139,7 +141,10 @@ case "usage":
         a.tokensOut += entry.tokensOut ?? 0
         agg[key] = a
     }
-    func cost(model: String, tokensIn: Int, tokensOut: Int) -> Double? {
+    func cost(model: String, tokensIn: Int, tokensOut: Int, seconds: Double) -> Double? {
+        if let stt = ProviderRegistry.sttProviders(config).first(where: { $0.id == model }), let rate = stt.costPerMinute {
+            return seconds / 60 * rate
+        }
         guard let p = ProviderRegistry.allCleanupProviders(config).first(where: { $0.model == model }),
               p.inputCostPerMTok != nil || p.outputCostPerMTok != nil else { return nil }
         return Double(tokensIn) / 1e6 * (p.inputCostPerMTok ?? 0)
@@ -148,7 +153,7 @@ case "usage":
     var dayCost: [String: Double] = [:]
     print("day         model                          audio     tok in   tok out  cost")
     for (key, a) in agg.sorted(by: { ($0.key.day, $0.key.model) > ($1.key.day, $1.key.model) }) {
-        let c = cost(model: key.model, tokensIn: a.tokensIn, tokensOut: a.tokensOut)
+        let c = cost(model: key.model, tokensIn: a.tokensIn, tokensOut: a.tokensOut, seconds: a.seconds)
         if let c { dayCost[key.day, default: 0] += c }
         let audio = a.seconds > 0 ? String(format: "%.0fs", a.seconds) : ""
         let tin = a.tokensIn > 0 ? "\(a.tokensIn)" : ""
@@ -245,6 +250,14 @@ case "eval":
 
 case "models":
     let config = TalkyConfig.load()
+    print("speech engine (mode: \(config.stt.mode)):")
+    for p in STTPlugins.availableProviders(config) {
+        let active = p.id == config.stt.provider ? "* " : "  "
+        let caps = [p.supportsStreaming ? "streaming" : "batch", p.supportsDiarization ? "diarization" : nil].compactMap { $0 }.joined(separator: ", ")
+        let cost = p.costPerMinute.map { String(format: " $%.4f/min", $0) } ?? ""
+        print("\(active)\(p.id): \(p.model) [\(caps)]\(cost)")
+    }
+    print()
     print("cleanup: \(config.cleanup.enabled ? "enabled" : "disabled")")
     for provider in ProviderRegistry.allCleanupProviders(config) {
         let active = provider.id == config.cleanup.provider ? "* " : "  "
@@ -253,8 +266,22 @@ case "models":
     }
 
 case "use":
-    guard args.count > 1 else { fail("usage: talky use <provider-id>") }
+    guard args.count > 1 else { fail("usage: talky use <provider-id> | talky use --stt <provider-id> [--mode auto|streaming|batch]") }
     var config = TalkyConfig.load()
+    if args[1] == "--stt" {
+        guard args.count > 2 else { fail("usage: talky use --stt <provider-id>") }
+        let sttID = args[2]
+        guard STTPlugins.availableProviders(config).contains(where: { $0.id == sttID }) else {
+            fail("Unknown speech provider '\(sttID)'. Run `talky models`.")
+        }
+        config.stt.provider = sttID
+        if let m = args.firstIndex(of: "--mode"), args.count > m + 1 { config.stt.mode = args[m + 1] }
+        try? config.save()
+        print("speech engine: \(sttID) (mode \(config.stt.mode))")
+        DistributedNotificationCenter.default().postNotificationName(
+            Notification.Name("io.talky.reload"), object: nil, userInfo: nil, deliverImmediately: true)
+        break
+    }
     let id = args[1]
     guard ProviderRegistry.allCleanupProviders(config).contains(where: { $0.id == id }) else {
         fail("Unknown provider '\(id)'. Run `talky models` to list, or add it to \(TalkyConfig.fileURL.path)")
@@ -333,7 +360,10 @@ default:
     // Treat as a media file path.
     var flags = Set<String>()
     var path = first
+    var skipNext = false
     for arg in args.dropFirst() {
+        if skipNext { skipNext = false; continue }
+        if arg == "--stt" { skipNext = true; continue }
         if arg.hasPrefix("--") { flags.insert(arg) } else { path = arg }
     }
     if first.hasPrefix("--"), args.count > 1 {
@@ -346,7 +376,8 @@ default:
         fail("Not a command or file: \(path)\n\n\(usage)")
     }
 
-    let config = TalkyConfig.load()
+    var config = TalkyConfig.load()
+    if let i = args.firstIndex(of: "--stt"), args.count > i + 1 { config.stt.provider = args[i + 1] }
     let wantClean = !flags.contains("--raw")
     Task {
         do {
