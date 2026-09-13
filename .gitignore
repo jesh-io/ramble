@@ -3,3 +3,17 @@ dist/
 .DS_Store
 *.xcodeproj
 .swiftpm/
+.build-*/
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.mobileprovision
+*.xcuserstate
+xcuserdata/
+config.json
+*.broken.json
+history.jsonl
+usage.jsonl
+recordings/

@@ -1,8 +1,8 @@
 # Speech-to-text plugin contract
 
-Each remote STT engine is its own SPM target (`Sources/TalkySTT<Name>/`),
+Each remote STT engine is its own SPM target (`Sources/RambleSTT<Name>/`),
 registered with `TranscriberFactory` and gated by `canImport` in
-`Sources/TalkyKit/STTPlugins.swift`. Removing a target from `TalkyKit`'s
+`Sources/RambleKit/STTPlugins.swift`. Removing a target from `RambleKit`'s
 dependencies in `Package.swift` drops the engine cleanly.
 
 ## What a plugin implements
@@ -12,7 +12,7 @@ public enum <Name>STTPlugin {
     public static func register()   // TranscriberFactory.register(engine: "<engine>") { provider, options in ... }
 }
 ```
-The builder returns a `Transcriber` (TalkyCore):
+The builder returns a `Transcriber` (RambleCore):
 
 ```swift
 public protocol Transcriber: Sendable {
@@ -53,17 +53,18 @@ mode "auto|streaming|batch", diarize).
   timestamps. When `options.diarize` and the model supports it, request
   speaker labels and set `segment.speaker` (e.g. "S1"). Set
   `.diarization` in capabilities only if supported.
-- **Errors**: throw `TalkyError("<engine>: <what> (HTTP nnn: body…)")`.
+- **Errors**: throw a concise `RambleError` with provider and HTTP status;
+  avoid retaining raw response bodies that may echo user content or credentials.
   Missing key → throw in `prepare()`.
 - Language mode is Swift 5 (no strict concurrency); mark stream classes
   `@unchecked Sendable`. Follow `AppleStream` in
-  `Sources/TalkyTranscribe/AppleTranscriber.swift` for shape.
-- Only touch files inside your own target directory. Do not edit
-  `Package.swift`, `STTPlugins.swift`, or other targets. Build with
-  `swift build --scratch-path .build-<name> --target TalkySTT<Name>` to avoid
+  `Sources/RambleTranscribe/AppleTranscriber.swift` for shape.
+- Keep provider implementation in its target; update registry/capabilities and
+  tests when enabling it. Build with
+  `swift build --scratch-path .build-<name> --target RambleSTT<Name>` to avoid
   lock contention with parallel builds.
 - No API keys are available locally. Verify: it compiles; message parsing
   is exercised against sample payloads from the vendor docs (embed a
   `#if DEBUG` self-test or a static `parse` function you call from a
   comment-documented example); the batch path is tried with
-  `.build-<name>/debug/talky` only if a key appears in the environment.
+  `.build-<name>/debug/ramble` only if a key appears in the environment.

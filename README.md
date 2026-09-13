@@ -1,165 +1,155 @@
-# Talky
+# Ramble
 
-Fully local voice-to-text for macOS, Wispr Flow-style. Push-to-talk dictation
-with live on-screen captions, LLM cleanup (filler-word removal, punctuation,
-formatting), and audio/video file transcription. Built as a modular Swift
-package: a core SDK plus a lightweight menu bar app and CLI on top.
+Voice-to-text for macOS 26 and iOS 26, built in Swift. Dictate into the app
+you are using, clean up filler words and punctuation, or transcribe a file.
+Includes a menu bar app, the `ramble` CLI, and modular Swift packages.
 
-- **Speech-to-text**: Apple's on-device `SpeechAnalyzer` (macOS 26+). No audio
-  ever leaves the machine. True streaming — you see text as you speak.
-- **Cleanup**: any OpenAI-compatible endpoint, local or remote — Ollama,
-  LM Studio, vLLM, OpenAI, Groq, OpenRouter, … Switch models from the menu bar
-  or `talky use <id>` to trial what works best.
-- **Diarization-ready**: the transcript model carries optional speaker labels
-  and the `Transcriber` protocol declares a `.diarization` capability, so a
-  speaker-aware engine (e.g. [FluidAudio](https://github.com/FluidInference/FluidAudio))
-  can slot in without API changes.
+Apple's speech engine runs on-device by default. Cleanup uses a local Ollama
+model by default on Mac and Apple Intelligence on iPhone. Optional remote
+providers send audio and/or text to that provider. See [Privacy](PRIVACY.md).
 
-## Requirements
+## Install
 
-- macOS 26+ (uses the new on-device SpeechAnalyzer API)
-- Xcode 26 toolchain to build
-- [Ollama](https://ollama.com) (or any OpenAI-compatible server) for cleanup —
-  optional; dictation works without it (raw transcript)
+Download `Ramble-macOS.zip` from [Releases](https://github.com/jesh-io/ramble/releases),
+unzip it, and move `Ramble.app` to `/Applications`. The macOS release targets
+Apple Silicon and macOS 26+. CLI downloads are in `ramble-cli-macOS.zip`.
+Check downloads against `SHA256SUMS.txt`.
 
-## Install (release build)
+The first release is ad-hoc signed, not notarized. macOS may block it:
+use System Settings → Privacy & Security → Open Anyway after attempting to
+launch the downloaded app. Only bypass Gatekeeper for a download you trust.
+Updates may require granting Accessibility again until Developer ID signing
+is configured.
 
-Grab **Talky-macOS.zip** from the [latest release](https://github.com/jesh-io/talky/releases),
-unzip, move `Talky.app` to `/Applications`. Builds are not yet notarized,
-so on first launch right-click → **Open** (or `xattr -dr com.apple.quarantine
-/Applications/Talky.app`). Every push to `main` also produces a downloadable
-artifact under **Actions**; tags `v*` publish a Release.
+Grant Microphone access. Accessibility allows pasting into the frontmost app;
+without it, results go to the clipboard. Settings → General → Startup has
+**Launch Ramble at login**. Install in `/Applications` before enabling it.
 
-## Build & install (from source)
+For local cleanup, install [Ollama](https://ollama.com) and run:
 
 ```bash
-./scripts/build-app.sh
-cp -R dist/Talky.app /Applications/
-sudo ln -sf "$PWD/dist/talky" /usr/local/bin/talky
-open /Applications/Talky.app
+ollama pull qwen3:4b-instruct
 ```
 
-First run: grant **Microphone** when prompted, and **Accessibility**
-(System Settings → Privacy & Security → Accessibility → Talky) so Talky can
-paste results into the frontmost app. Without Accessibility it still works —
-results land on the clipboard.
-
-Cleanup model (default `gemma3:1b` via Ollama):
-
-```bash
-ollama pull gemma3:1b     # and/or gemma3:4b — better quality, still fast
-```
+Cleanup is optional. Disable it for raw dictation, or select Apple Intelligence
+on compatible hardware with Apple Intelligence enabled.
 
 ## Use
 
-1. Press the hotkey (default **⌃⌥⌘D**) — the menu bar mic turns red and a
-   floating caption panel appears at the bottom of the screen.
-2. Speak. Text streams into the panel as you talk (dimmed = still revising).
-3. Press the hotkey again — the transcript is cleaned by the active LLM and
-   pasted into whatever app has focus.
-
-### BetterTouchTools (3-finger double-tap)
-
-Either have your BTT gesture send the keyboard shortcut `⌃⌥⌘D`, or — more
-robust — give the gesture an **Execute Shell Script** action:
+Press **⌃⌥⌘D**, speak, and press the shortcut again to paste the result.
+Settings supports keyboard, mouse, and modifier-key triggers, including hold-to-talk.
+Audio recordings, transcript history, and product analytics are all **off by default**.
 
 ```bash
-/usr/local/bin/talky toggle
+ramble meeting.mp4
+ramble interview.m4a --raw
+ramble lecture.mp3 --json
+ramble toggle
+ramble clean "um so basically"
+ramble models
+ramble use qwen3-4b
+ramble config
 ```
 
-### CLI
+BetterTouchTool can trigger `ramble toggle` or send the keyboard shortcut.
+To inspect all commands, run `ramble --help`.
+
+## Providers and credentials
+
+Settings → Accounts supports local and remote cleanup accounts. Save API keys
+in Keychain or name an environment variable; do not put secrets in configuration.
+GUI apps launched by Finder do not inherit terminal shell variables. Custom
+OpenAI-compatible endpoints work for cleanup. Personal vocabulary is included
+in cleanup prompts, so select a local provider to keep it on-device.
+
+| Speech engine | Live streaming | Batch | Status |
+|---|---|---|---|
+| Apple SpeechAnalyzer | Yes | Yes | Default, on-device |
+| OpenAI Transcribe | No | Yes | Remote; live mode currently uses batch fallback |
+| Mistral Voxtral | No | Yes | Remote; live mode currently uses batch fallback |
+| Groq Whisper | No | Yes | Remote |
+| ElevenLabs, AssemblyAI, Deepgram | No | No | Scaffolds; disabled pending implementation |
+
+Select a supported remote speech engine under Settings → General. Batch mode
+records locally and uploads at stop. Do not treat catalog/model prices as current
+quotes: provider availability and rates change, and editable defaults are estimates.
+
+## Build from source
+
+Requires macOS 26+ and Xcode 26.2 or newer with Swift 6.2.
 
 ```bash
-talky meeting.mp4              # transcribe any audio/video file (cleaned)
-talky interview.m4a --raw      # raw transcript, no LLM
-talky lecture.mp3 --json       # segments with timestamps as JSON
-talky toggle                   # start/stop dictation in the menu bar app
-talky clean "um so basically"  # test the active cleanup model on text
-talky models                   # list cleanup providers
-talky use gemma3-4b            # switch cleanup model
-talky download                 # pre-fetch the on-device speech model
+git clone https://github.com/jesh-io/ramble.git
+cd ramble
+swift test
+swift test --package-path Packages/RambleAnalytics
+./scripts/build-app.sh
+cp -R dist/Ramble.app /Applications/
+open /Applications/Ramble.app
 ```
 
-## Configuration
+For a command on your PATH, copy `dist/ramble` to a directory on your PATH.
+The build script reads `VERSION` or `RAMBLE_VERSION`; release CI supplies the tag.
 
-`~/.config/talky/config.json` (created on first run; `talky config` prints the
-path). Missing keys fall back to defaults, so you can keep a minimal file.
+Private trackpad APIs are excluded from the app by default. To opt in:
 
-```jsonc
-{
-  "hotkey": "ctrl+alt+cmd+d",      // e.g. "cmd+shift+space", "f13"
-  "locale": "en-US",
-  "cleanup": {
-    "enabled": true,
-    "provider": "gemma3-1b",        // active provider id
-    "providers": [
-      { "id": "gemma3-1b", "baseURL": "http://localhost:11434/v1", "model": "gemma3:1b" },
-      { "id": "openai",    "baseURL": "https://api.openai.com/v1", "model": "gpt-5-mini", "apiKeyEnv": "OPENAI_API_KEY" }
-    ],
-    "systemPrompt": "…",            // edit to taste
-    "timeoutSeconds": 30
-  },
-  "output": { "paste": true, "restoreClipboard": true, "sounds": true }
-}
+```bash
+RAMBLE_ENABLE_GESTURES=1 ./scripts/build-app.sh
 ```
 
-Providers are plain OpenAI-compatible chat-completions endpoints. Local and
-remote are configured identically; API keys come from the environment via
-`apiKeyEnv` (don't put secrets in the file). Add as many as you like and
-switch from the menu bar (Cleanup Model) or `talky use`.
+That build uses Apple's private MultitouchSupport framework through
+OpenMultitouchSupport and is unsuitable for App Store submission.
 
-## Trackpad gestures (optional add-on)
+### iPhone (WIP)
 
-Toggle dictation with a trackpad gesture — no BetterTouchTool needed.
-Default: **3-finger double tap** (a safe combination that doesn't collide
-with system gestures). Enable and tune it in Settings → General.
+The mobile client is unfinished and is not part of the v0.1 release gate.
+The instructions below are for development; a successful mobile build is not
+guaranteed for this snapshot.
 
-This feature uses Apple's private MultitouchSupport framework (via
-[OpenMultitouchSupport](https://github.com/Kyome22/OpenMultitouchSupport))
-and is a **code-level optional add-on**: to publish a build with zero
-private-API usage, remove `"TalkyGestures"` from `TalkyApp`'s dependencies
-in `Package.swift` — the app gates on `canImport(TalkyGestures)` and
-compiles cleanly without it (no App Store restrictions apply to the rest).
+Install XcodeGen and generate the ignored project before opening it:
 
-## iPhone (TalkyPhone)
+```bash
+brew install xcodegen
+cd RamblePhone
+xcodegen generate
+open RamblePhone.xcodeproj
+```
 
-`TalkyPhone/` is an iOS 26 app built on the same TalkyKit SDK: tap the mic
-(or press the **Action button**) → speak → cleaned text lands on the
-clipboard, ready to paste anywhere. iOS forbids system-wide keystroke
-injection, so paste is one tap — no custom keyboard required.
+Select your signing team in Xcode, then run on an iPhone with iOS 26. Apple
+Intelligence is the default cleanup engine; optional MLX Qwen downloads model
+weights from Hugging Face. The Action button can run Toggle Ramble Dictation.
+The iPhone app is source-only in this release; no IPA is distributed.
+The MLX dependency requires the Metal toolchain (`xcodebuild -downloadComponent
+MetalToolchain`) and approval of its package macros in Xcode.
 
-Two fully on-device cleanup engines:
+## Configuration and upgrading
 
-- **`apple-fm`** (default) — Apple's built-in foundation model
-  (Apple Intelligence). Zero download, also selectable on the Mac.
-- **`mlx-qwen`** — Qwen3 4B via MLX; one-time ~2.3 GB download from
-  Hugging Face, then fully local. Higher quality.
+Mac configuration: `~/.config/ramble/config.json`. Missing keys use defaults.
+On iPhone, configuration is `ramble-config.json` in the app's Documents directory.
+The rename introduces new bundle identifiers and data locations. Existing installs
+keep their previous settings and recordings untouched; there is no automatic
+import. Copy a reviewed configuration into the new location if desired, or start
+fresh. Re-grant permissions and replace old shortcuts/login items after installing.
 
-Build: open `TalkyPhone/TalkyPhone.xcodeproj` in Xcode, set your signing
-team, run on your iPhone. (Regenerate the project after editing
-`project.yml` with `xcodegen generate`.) Then Settings → Action Button →
-Shortcut → **Toggle Talky Dictation**.
+Recordings can be enabled in Settings → Storage and are normally pruned after
+72 hours. Transcript history has separate consent and retention. Pruning runs at
+launch and after dictation; `0` keeps data indefinitely. Delete stored audio and
+history through Storage after stopping active dictation.
 
-## Package layout
+## Development
 
-| Target | What it is |
-|---|---|
-| `TalkyCore` | Transcript/segment model (speaker-ready), `Transcriber` & `TextCleaner` protocols, config |
-| `TalkyAudio` | Mic capture; audio extraction from audio/video files |
-| `TalkyTranscribe` | `AppleTranscriber` — on-device SpeechAnalyzer engine |
-| `TalkyClean` | `OpenAICompatCleaner` — model-agnostic LLM cleanup |
-| `TalkyKit` | Umbrella SDK: `DictationSession` (mic → live text → clean → result), `FileTranscription` |
-| `talky` | CLI |
-| `TalkyApp` | Menu bar app: hotkey, live caption panel, auto-paste |
+`RambleCore` holds configuration and transcript types; `RambleKit` orchestrates
+capture, transcription and cleanup. `RambleApp`, `RambleCLI` and `RamblePhone`
+are clients. Speech engines are separate targets. `Packages/RambleAnalytics`
+is an independent package with typed events, logging, HTTP delivery and a
+persistent retry queue. The release uses logging only, after explicit opt-in;
+analytics never receives dictated content.
 
-Consume the SDK from another package with
-`.package(path: "…/talky")` and `import TalkyKit` (or just the pieces you need).
+- [Contributing](CONTRIBUTING.md)
+- [Privacy](PRIVACY.md)
+- [Analytics questions, events and delivery contract](docs/ANALYTICS.md)
+- [Speech plugin architecture](docs/STT-PLUGINS.md)
+- [Security reporting](SECURITY.md)
+- [Changelog](CHANGELOG.md)
 
-## Extending
-
-- **New STT engine** (Whisper via WhisperKit, Parakeet via FluidAudio, a remote
-  API): implement `Transcriber` + `TranscriptionStream` in a new module. If it
-  labels speakers, set `.diarization` in `capabilities` and populate
-  `TranscriptSegment.speaker` — formatting (`S1: …`) already works.
-- **New cleanup backend** with a different wire format (e.g. native Anthropic
-  API): implement `TextCleaner`.
+MIT licensed. Dependency license texts are included in `ThirdPartyNotices`.

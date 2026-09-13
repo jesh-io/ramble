@@ -1,4 +1,4 @@
-# Talky UX — user stories & interface decisions (macOS)
+# Ramble UX — user stories & interface decisions (macOS)
 
 Principle: **the menu bar is the interface.** The pill is a status glyph,
 not a reading surface. Nothing steals focus; nothing makes you wait.
@@ -33,24 +33,24 @@ History… shows recent sessions with raw + cleaned + audio. Every session
 is on disk before anything can fail.
 
 **6. Transcribe a file / let the CLI rip**
-Everything the app does is scriptable: `talky <file>`, `talky clean`,
-`talky toggle`, `talky history`. Claude/scripts drive it headlessly.
+Everything the app does is scriptable: `ramble <file>`, `ramble clean`,
+`ramble toggle`, `ramble history`. Claude/scripts drive it headlessly.
 
 **7. Teach it your words (three doors)**
 Menu → "Add to Vocabulary…" (`Term = misheard1, misheard2`); menu →
 "Fix Last Dictation…" (edit the text — a local model diffs your edits,
 learns the terms, copies the corrected text, and saves your version as an
-eval golden label); or `talky learn "…"` for scripts.
+eval golden label); or `ramble learn "…"` for scripts.
 
 **8. Every correction makes it better**
-Sessions keep audio + raw + cleaned + your revision. `talky eval
+Sessions keep audio + raw + cleaned + your revision. `ramble eval
 [provider]` re-runs cleanup over all corrected sessions and reports WER
 against your versions — A/B any prompt or model change against your own
 history before adopting it.
 
 **9. Know what it costs**
 `usage.jsonl` logs STT seconds and cleanup tokens per model from day one.
-`talky usage` shows per-day/per-model usage with costs (set
+`ramble usage` shows per-day/per-model usage with costs (set
 `inputCostPerMTok`/`outputCostPerMTok` on remote providers) and a 30-day
 projection.
 
