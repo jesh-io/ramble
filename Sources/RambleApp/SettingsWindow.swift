@@ -146,9 +146,9 @@ private struct GeneralTab: View {
                     Text("Triple tap").tag(3)
                 }
                 .disabled(!store.config.gesture.enabled)
-                Toggle("Extra tap sends — triple-tap to finish, or one tap within 10 s of a paste", isOn: $store.config.gesture.tapToEnter)
+                Toggle("Extra tap sends — one tap past the gesture to finish, or one tap within 10 s of a paste", isOn: $store.config.gesture.tapToEnter)
                     .disabled(!store.config.gesture.enabled)
-                Text("3-finger double tap is a safe default (3-finger single tap collides with the system's Look Up; 3/4-finger swipes belong to Mission Control). If a BetterTouchTool gesture already triggers the hotkey, enable only one or every tap will double-toggle.")
+                Text("3-finger triple tap is the default (3-finger single tap collides with the system's Look Up; 3/4-finger swipes belong to Mission Control). If a BetterTouchTool gesture already triggers the hotkey, enable only one or every tap will double-toggle.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             #endif

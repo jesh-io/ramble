@@ -16,7 +16,9 @@ echo "Building (release)…"
 swift build -c release
 
 APP=dist/Ramble.app
-rm -rf "$APP"
+# Clear both payloads first: the notice files are read-only, so copying
+# over a previous build's tree fails.
+rm -rf "$APP" dist/ramble-cli
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" dist/ramble-cli
 
 cp .build/release/RambleApp "$APP/Contents/MacOS/Ramble"

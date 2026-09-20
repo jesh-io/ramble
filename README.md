@@ -91,14 +91,17 @@ open /Applications/Ramble.app
 For a command on your PATH, copy `dist/ramble` to a directory on your PATH.
 The build script reads `VERSION` or `RAMBLE_VERSION`; release CI supplies the tag.
 
-Private trackpad APIs are excluded from the app by default. To opt in:
+Private trackpad APIs are excluded from source builds by default. To opt in:
 
 ```bash
 RAMBLE_ENABLE_GESTURES=1 ./scripts/build-app.sh
 ```
 
 That build uses Apple's private MultitouchSupport framework through
-OpenMultitouchSupport and is unsuitable for App Store submission.
+OpenMultitouchSupport and is unsuitable for App Store submission. The
+released `Ramble-macOS.zip` is built with the flag on, so the trackpad
+gesture — a 3-finger triple tap to start and stop dictation — works out of
+the box; turn it off or rebind it in Settings → Trackpad Gesture.
 
 ### iPhone (WIP)
 

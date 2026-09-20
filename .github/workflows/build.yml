@@ -50,6 +50,10 @@ jobs:
       - name: Build app + CLI
         env:
           RAMBLE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          # Release builds ship the trackpad gesture add-on (3-finger triple
+          # tap). It uses the private MultitouchSupport framework, so these
+          # binaries are for direct download, not App Store submission.
+          RAMBLE_ENABLE_GESTURES: "1"
         run: ./scripts/build-app.sh
 
       - name: Test

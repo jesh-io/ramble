@@ -342,7 +342,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     thenReturn: sendNow, commandReturn: commandReturn)
                 if pasted {
                     lastPasteAt = Date()
+                    #if RAMBLE_GESTURES
                     let offerSend = config.gesture.enabled && config.gesture.tapToEnter && !sendNow
+                    #else
+                    let offerSend = false
+                    #endif
                     panel.setStatus("✓", message: sendNow ? "Sent ↩" : offerSend ? "↩ tap to send" : snippet(text))
                     hidePanelSoon(after: offerSend ? sendWindow : 1.5)
                 } else {

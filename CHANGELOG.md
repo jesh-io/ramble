@@ -3,6 +3,45 @@
 All notable changes to Ramble. Releases are cut with the `/release` skill;
 binaries are built by GitHub Actions and attached to each release.
 
+## [0.1.1] - 2026-09-19
+
+### New
+- Trackpad gesture in the released build: a **3-finger triple tap** starts and
+  stops dictation, on out of the box. Settings → Trackpad Gesture changes the
+  finger/tap count or turns it off. A fourth tap while cleanup finishes (or a
+  single tap within 10 s of a paste) presses Return, as before.
+
+### Changed defaults / config
+- `gesture.enabled` now defaults to `true` and `gesture.taps` to `3`
+  (`fingers` stays `3`).
+- New key `gestureDefaultApplied`. Gesture support was compiled out of the 0.1
+  app, so a `gesture` block saved by that build recorded no real choice: on
+  first launch 0.1.1 adopts the new default once and sets this marker. A
+  gesture setting you changed yourself is left as-is.
+
+### Fixed
+- The "↩ tap to send" hint no longer appears in builds without the gesture
+  add-on, where no tap could act on it.
+- `scripts/build-app.sh` now rebuilds over an existing `dist/`; the read-only
+  third-party notice files made a second run fail.
+
+### Install and upgrade
+Download `Ramble-macOS.zip`, unzip and move `Ramble.app` to `/Applications`.
+Builds are ad-hoc signed, not notarized: right-click → Open, or
+`xattr -dr com.apple.quarantine /Applications/Ramble.app`. Updating can
+re-prompt Accessibility until Developer ID signing is configured. CLI:
+`ramble-cli-macOS.zip`; integrity: `SHA256SUMS.txt`.
+
+### Known limitations
+- The gesture add-on reaches the trackpad through Apple's private
+  MultitouchSupport framework (OpenMultitouchSupport), so these binaries are
+  not eligible for App Store distribution.
+- If BetterTouchTool or a similar tool already fires Ramble's hotkey from a
+  trackpad gesture, turn one of the two off — otherwise every gesture
+  double-toggles dictation.
+- macOS ships its own 3-finger tap gestures (Look Up). If yours are enabled,
+  pick a different finger count in Settings.
+
 ## [0.1] - 2026-09-12
 
 First public Ramble release (application version 0.1.0).

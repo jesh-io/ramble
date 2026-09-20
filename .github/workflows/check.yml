@@ -13,6 +13,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Build and test
+        env:
+          RAMBLE_ENABLE_GESTURES: "1"   # match the release build
         run: |
           swift test
           swift test --package-path Packages/RambleAnalytics

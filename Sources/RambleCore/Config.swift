@@ -351,21 +351,22 @@ public struct APIAccount: Codable, Sendable, Equatable {
 }
 
 /// Trackpad gesture toggle (requires the RambleGestures add-on at build
-/// time; ignored otherwise). Disabled by default — if you also have a
-/// BetterTouchTool gesture bound to the hotkey, enabling both would
-/// double-toggle every dictation.
+/// time; ignored otherwise). On by default as a 3-finger triple tap — if
+/// you also have a BetterTouchTool gesture bound to the hotkey, turn one
+/// of them off or every gesture will double-toggle.
 public struct GestureConfig: Codable, Sendable, Equatable {
     public var enabled: Bool
     /// Finger count for the tap gesture (2–5).
     public var fingers: Int
-    /// Consecutive taps required (1–3). Default: double tap.
+    /// Consecutive taps required (1–3). Default: triple tap.
     public var taps: Int
     /// Extra taps send Return: one tap beyond the gesture count while
-    /// finishing (e.g. triple tap) presses Return after the paste, and a
-    /// lone tap within 10 s of a paste presses Return immediately.
+    /// finishing (a fourth tap, with the triple-tap default) presses Return
+    /// after the paste, and a lone tap within 10 s of a paste presses
+    /// Return immediately.
     public var tapToEnter: Bool
 
-    public static let `default` = GestureConfig(enabled: false, fingers: 3, taps: 2, tapToEnter: true)
+    public static let `default` = GestureConfig(enabled: true, fingers: 3, taps: 3, tapToEnter: true)
 
     public init(enabled: Bool, fingers: Int, taps: Int, tapToEnter: Bool = true) {
         self.enabled = enabled
@@ -494,6 +495,9 @@ public struct RambleConfig: Codable, Sendable, Equatable {
     public var bindings: [InputBinding]
     /// Trackpad gesture toggle (RambleGestures add-on).
     public var gesture: GestureConfig
+    /// One-shot marker for the 0.1.1 gesture default. Absent in files
+    /// written before gestures shipped; see `load()`.
+    public var gestureDefaultApplied: Bool = true
     /// Personal vocabulary: project names, jargon, people — exact spellings
     /// the speech engine tends to mishear. Injected into the cleanup prompt
     /// so mishearings get corrected back to these spellings.
@@ -515,7 +519,7 @@ public struct RambleConfig: Codable, Sendable, Equatable {
     public init(hotkey: String, locale: String, stt: STTConfig = .default, cleanup: CleanupConfig,
                 output: OutputConfig, recordings: RecordingsConfig = .default, accounts: [APIAccount] = [],
                 bindings: [InputBinding] = [], gesture: GestureConfig = .default,
-                vocabulary: [String] = []) {
+                gestureDefaultApplied: Bool = true, vocabulary: [String] = []) {
         self.hotkey = hotkey
         self.locale = locale
         self.stt = stt
@@ -525,6 +529,7 @@ public struct RambleConfig: Codable, Sendable, Equatable {
         self.accounts = accounts
         self.bindings = bindings
         self.gesture = gesture
+        self.gestureDefaultApplied = gestureDefaultApplied
         self.vocabulary = vocabulary
     }
 
@@ -542,6 +547,8 @@ public struct RambleConfig: Codable, Sendable, Equatable {
         accounts = try c.decodeIfPresent([APIAccount].self, forKey: .accounts) ?? d.accounts
         bindings = try c.decodeIfPresent([InputBinding].self, forKey: .bindings) ?? []
         gesture = try c.decodeIfPresent(GestureConfig.self, forKey: .gesture) ?? d.gesture
+        // Missing key = written before 0.1.1, so the default has not been applied.
+        gestureDefaultApplied = try c.decodeIfPresent(Bool.self, forKey: .gestureDefaultApplied) ?? false
         vocabulary = try c.decodeIfPresent([String].self, forKey: .vocabulary) ?? d.vocabulary
         analyticsEnabled = try c.decodeIfPresent(Bool.self, forKey: .analyticsEnabled) ?? false
     }
@@ -604,6 +611,19 @@ public struct RambleConfig: Codable, Sendable, Equatable {
             if var config = try? JSONDecoder().decode(RambleConfig.self, from: data) {
                 if config.bindings.isEmpty, !config.hotkey.isEmpty {
                     config.bindings = [.hotkey(config.hotkey)]
+                }
+                // Gestures were compiled out of the app before 0.1.1, so a
+                // `gesture` block saved by an earlier build records no real
+                // choice. Adopt the new default (3-finger triple tap, on)
+                // once, and only where the block still has that build's
+                // shape — anything set deliberately is left alone.
+                if !config.gestureDefaultApplied {
+                    if !config.gesture.enabled, config.gesture.fingers == 3, config.gesture.taps == 2 {
+                        config.gesture.enabled = true
+                        config.gesture.taps = 3
+                    }
+                    config.gestureDefaultApplied = true
+                    try? config.save()
                 }
                 if config.accounts.contains(where: { $0.apiKey != nil }) || config.cleanup.providers.contains(where: { $0.apiKey != nil }) {
                     // Migration retains the original file if Keychain is unavailable.

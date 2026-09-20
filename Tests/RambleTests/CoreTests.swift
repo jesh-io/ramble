@@ -18,6 +18,25 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(config.recordings.retentionHours, 12)
         XCTAssertFalse(config.recordings.historyEnabled)
     }
+    func testGestureDefaultIsThreeFingerTripleTap() throws {
+        let config = try JSONDecoder().decode(RambleConfig.self, from: Data("{}".utf8))
+        XCTAssertTrue(config.gesture.enabled)
+        XCTAssertEqual(config.gesture.fingers, 3)
+        XCTAssertEqual(config.gesture.taps, 3)
+    }
+    func testPre011ConfigIsMarkedForTheGestureDefault() throws {
+        // No `gestureDefaultApplied` key: written before gestures shipped,
+        // so `load()` adopts the new default once. A file that has the key
+        // keeps whatever the user chose.
+        let legacy = try JSONDecoder().decode(
+            RambleConfig.self, from: Data(#"{"gesture":{"enabled":false,"fingers":3,"taps":2,"tapToEnter":true}}"#.utf8))
+        XCTAssertFalse(legacy.gestureDefaultApplied)
+        let chosen = try JSONDecoder().decode(
+            RambleConfig.self,
+            from: Data(#"{"gestureDefaultApplied":true,"gesture":{"enabled":false,"fingers":3,"taps":2,"tapToEnter":true}}"#.utf8))
+        XCTAssertTrue(chosen.gestureDefaultApplied)
+        XCTAssertFalse(chosen.gesture.enabled)
+    }
     func testSpokenFormatting() {
         XCTAssertEqual(SpokenCommands.apply(to: "hello new paragraph world"), "Hello\n\nWorld")
     }
